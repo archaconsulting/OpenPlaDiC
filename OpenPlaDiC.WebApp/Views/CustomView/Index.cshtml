@@ -1,0 +1,40 @@
+﻿@using System.Data
+@model DataTable
+
+<div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2>Custom Views</h2>
+        <a asp-action="Create" class="btn btn-primary">Add New View</a>
+    </div>
+
+    <table class="table table-hover table-bordered shadow-sm">
+        <thead class="table-dark">
+            <tr>
+                <th>Name</th>
+                <th>Label</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (DataRow row in Model.Rows)
+            {
+                <tr>
+                    <td>@row["Name"]</td>
+                    <td>@row["Label"]</td>
+                    <td>
+                        <span class="badge @((bool)row["IsAvailable"] ? "bg-success" : "bg-secondary")">
+                            @((bool)row["IsAvailable"] ? "Active" : "Inactive")
+                        </span>
+                    </td>
+                    <td>
+                        <a asp-action="Edit" asp-route-id="@row["Id"]" class="btn btn-sm btn-warning">Edit</a>
+                        <form asp-action="Delete" asp-route-id="@row["Id"]" method="post" style="display:inline">
+                            <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Delete this view?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>

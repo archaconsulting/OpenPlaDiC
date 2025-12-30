@@ -1,0 +1,87 @@
+﻿@using System.Data
+@model DataRow
+
+@{
+    ViewData["Title"] = "Edit Custom View";
+}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="card shadow border-0">
+                <div class="card-header bg-warning text-dark d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Edit Custom View: @Model["Name"]</h5>
+                    <small class="fw-bold text-uppercase">ID: @Model["Id"].ToString().Substring(0, 8)...</small>
+                </div>
+                <div class="card-body p-4">
+                    <form asp-action="Edit" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="Id" value="@Model["Id"]" />
+
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">System Name</label>
+                                <input type="text" name="Name" class="form-control" value="@Model["Name"]" required />
+                                <div class="form-text">Unique identifier for the view.</div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Display Label</label>
+                                <input type="text" name="Label" class="form-control" value="@Model["Label"]" required />
+                                <div class="form-text">Friendly name shown in UI.</div>
+                            </div>
+                        </div>
+
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold">Icon (CSS Class)</label>
+                                <div class="input-group">
+                                    <span class="input-group-text"><i class="@Model["Icon"]"></i></span>
+                                    <input type="text" name="Icon" class="form-control" value="@Model["Icon"]" placeholder="bi bi-table" />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Razor Content / View Definition</label>
+                            <textarea name="Content" class="form-control font-monospace" rows="6">@Model["Content"]</textarea>
+                            <div class="form-text text-danger">Warning: Modifying the content may affect related view.</div>
+                        </div>
+
+                        <div class="card bg-light mb-4">
+                            <div class="card-body">
+                                <h6 class="card-title fw-bold mb-3">Settings</h6>
+                                <div class="d-flex gap-5">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" name="IsAvailable" value="true" id="isAv" @((bool)Model["IsAvailable"] ? "checked" : "")>
+                                        <label class="form-check-label" for="isAv">Is Available</label>
+                                    </div>
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" name="ControlledAccess" value="true" id="isCtrl" @((bool)Model["ControlledAccess"] ? "checked" : "")>
+                                        <label class="form-check-label" for="isCtrl">Controlled Access</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end gap-2 border-top pt-3">
+                            <a asp-action="Index" class="btn btn-outline-secondary px-4">Cancel</a>
+                            <button type="submit" class="btn btn-warning px-4 fw-bold">
+                                <i class="bi bi-save"></i> Save Changes
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // Script opcional para previsualización dinámica de iconos
+        document.querySelector('input[name="Icon"]').addEventListener('input', function(e) {
+            const iconElem = document.querySelector('.input-group-text i');
+            iconElem.className = e.target.value;
+        });
+    </script>
+}

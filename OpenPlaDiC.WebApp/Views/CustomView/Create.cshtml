@@ -1,0 +1,49 @@
+﻿@using OpenPlaDiC.Entities.Models
+@model CustomView
+
+<div class="container mt-4">
+    <div class="card shadow">
+        <div class="card-header bg-primary text-white">
+            <h4>Create Custom View</h4>
+        </div>
+        <div class="card-body">
+            <form asp-action="Create" method="post">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">System Name</label>
+                        <input asp-for="Name" class="form-control" placeholder="e.g. vwSalesSummary" required />
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Display Label</label>
+                        <input asp-for="Label" class="form-control" placeholder="e.g. Sales Summary" required />
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Razor Content / View Definition</label>
+                    <textarea asp-for="Content" class="form-control" rows="5" placeholder="<h1>Hello world</h1>"></textarea>
+                </div>
+
+                <div class="row mb-3">
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input asp-for="IsAvailable" class="form-check-input" type="checkbox" checked>
+                            <label class="form-check-label">Is Available</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-check form-switch">
+                            <input asp-for="ControlledAccess" class="form-check-input" type="checkbox">
+                            <label class="form-check-label">Controlled Access</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button type="submit" class="btn btn-success">Save View</button>
+                    <a asp-action="Index" class="btn btn-outline-secondary">Back to List</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>

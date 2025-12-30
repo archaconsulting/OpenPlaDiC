@@ -1,0 +1,15 @@
+﻿@using OpenPlaDiC.BIZ.Services
+@inject IDataService daS
+
+@{
+    string response = "";
+
+    var resp = daS.GetQuery("select * from users");
+
+
+    response = Newtonsoft.Json.JsonConvert.SerializeObject(resp);
+
+}
+@Html.Raw(response)
+        
+

@@ -1,8 +1,18 @@
 ﻿@{
-    ViewData["Title"] = "Home Page";
+    ViewData["Title"] = "Inicio";
 }
 
 <div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+    <h1 class="display-4">Bienvenido</h1>
+
+@if(User.Identity.IsAuthenticated)
+{
+        <p>Hola , <span class="fw-bold">@User.FindFirst("FullName")?.Value!</span> Ya estás a bordo.</p>
+}
+else
+{
+    <p>Please <a asp-controller="Account" asp-action="Login">log in</a> to access more features.</p>
+}
+
+
 </div>
