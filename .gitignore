@@ -362,3 +362,4 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /OpenPlaDiC.WebApp/Views/Custom/test01.cshtml
+/OpenPlaDiC.WebApp/Views/Custom/test01.cshtml
