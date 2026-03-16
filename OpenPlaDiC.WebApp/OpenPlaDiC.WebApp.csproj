@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+  <!-- To publish views instead of views.dll-->
+    <EnableDefaultRazorGenerateItems>false</EnableDefaultRazorGenerateItems>
+	<EnableDefaultRazorComponentItems>false</EnableDefaultRazorComponentItems>
+	<CopyRazorGenerateFilesToPublishDirectory>true</CopyRazorGenerateFilesToPublishDirectory>
+
+
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Razor.RuntimeCompilation" Version="10.0.2" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OpenPlaDiC.BIZ\OpenPlaDiC.BIZ.csproj" />
+    <ProjectReference Include="..\OpenPlaDiC.DAL\OpenPlaDiC.DAL\OpenPlaDiC.DAL.csproj" />
+    <ProjectReference Include="..\OpenPlaDiC.SF\OpenPlaDiC.SF.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+	    <!-- Explicitly include each .cshtml files in the subfolders under Views  -->
+	  <Content Update="Views\**\*.cshtml" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>	
+
+</Project>
