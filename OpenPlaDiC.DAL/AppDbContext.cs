@@ -80,7 +80,7 @@ namespace OpenPlaDiC.DAL
             return response;
         }
 
-        public Response<DataTable> ExecProc(string procName, params GlobalItem[] parameters)
+        public Response<DataTable> ExecProc(string procName, OpenPlaDiC.Framework.GlobalItem[] parameters1, params GlobalItem[] parameters)
         {
             var response = new Response<DataTable>();
             try

@@ -16,7 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\OpenPlaDiC.Framework\OpenPlaDiC.Framework.csproj" />
+    <ProjectReference Include="..\OpenPlaDiC.Framework\OpenPlaDiC.Framework.csproj" />
   </ItemGroup>
 
 </Project>
