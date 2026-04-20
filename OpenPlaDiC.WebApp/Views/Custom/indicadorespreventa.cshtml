@@ -1,0 +1,159 @@
+﻿@using OpenPlaDiC.Framework
+@Html.AntiForgeryToken()
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css" />
+
+<h3>Preventa <span id="lblFecha"></span></h3>
+
+<div class="container-fluid py-4" id="inventarioDashboard">
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Pedidos</h6>
+                    <h3 id="statPedidos">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Visitas Realizadas</h6>
+                    <h3 id="statVisitas">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Venta Bruta</h6>
+                    <h3 id="statVenta">$0.00</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Descuentos</h6>
+                    <h3 id="statDescuentos">$0.00</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-lg-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Top 10: Preventa vs Stock</div>
+                <div class="card-body"><canvas id="chartTop10" height="250"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card shadow-sm border-0 h-100 border-start border-danger border-4">
+                <div class="card-header bg-white fw-bold text-danger">⚠️ Stock Crítico</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive"><table class="table table-hover mb-0 w-100" id="tableStockCritico"><thead class="table-light small"><tr><th>Código</th><th>Producto</th><th>Stock</th><th>Demanda</th></tr></thead><tbody></tbody></table></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white fw-bold">Lista Detallada de Preventa</div>
+        <div class="p-3">
+            <table class="table table-striped table-hover w-100" id="tableGeneral">
+                <thead class="table-dark small">
+                    <tr><th>Código</th><th>Producto</th><th>Preventa</th><th>Stock</th><th>Venta Total</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+
+<script>
+    $(document).ready(function () {
+        const token = $('input[name="__RequestVerificationToken"]').val();
+
+        // 1. Cargar Estadísticas Generales
+        getProcDataAsync("sp_GetDashboardStats", [], token, (response) => {
+            const res = JSON.parse(response);
+            if (res.IsSuccess) {
+                const data = res.Data;
+                const stats = data[0]; // Asumiendo que devuelve una fila
+                $('#statPedidos').text(stats.TotalPedidos || 0);
+                $('#statVisitas').text(stats.ClientesVisitados || 0);
+                $('#statVenta').text(toMoney(stats.TotalVenta || 0));
+                $('#statDescuentos').text(toMoney(stats.TotalDescuentos || 0));
+            }
+        });
+
+        // 2. Cargar Inventario y Preventa
+        getProcDataAsync("sp_ObtenerPreventaInventario", [], token, (response) => {
+            const res = JSON.parse(response);
+
+            
+            if (res.IsSuccess) renderDashboard(res.Data);
+        });
+    });
+
+    function renderDashboard(data) {
+        // --- Gráfico Top 10 ---
+        const top10 = [...data].sort((a, b) => b.Preventa - a.Preventa).slice(0, 10);
+        const barColors = top10.map(i => (parseFloat(i.Preventa) > parseFloat(i.Inventario)) ? '#dc3545' : '#0d6efd');
+
+        new Chart(document.getElementById('chartTop10'), {
+            type: 'bar',
+            data: {
+                labels: top10.map(i => i.Nombre),
+                datasets: [
+                    { label: 'Preventa', data: top10.map(i => parseFloat(i.Preventa).toFixed(2)), backgroundColor: barColors },
+                    { label: 'Stock', data: top10.map(i => parseFloat(i.Inventario).toFixed(2)), backgroundColor: '#198754' }
+                ]
+            }
+        });
+
+        // --- Tabla Stock Crítico ---
+        $('#tableStockCritico tbody').html(data.filter(i => (i.Inventario || 0) < (i.Preventa || 0)).map(i => `
+            <tr>
+                <td>${i.Codigoprincipal}</td>
+                <td>${i.Nombre}</td>
+                <td>${toDecimal(i.Inventario, 2)}</td>
+                <td>${toDecimal(i.Preventa, 2)}</td>
+            </tr>`).join(''));
+        initDataTable('#tableStockCritico');
+
+        // --- Tabla General ---
+        $('#tableGeneral tbody').html(data.map(i => `
+            <tr>
+                <td>${i.Codigoprincipal || 'N/A'}</td>
+                <td>${i.Nombre}</td>
+                <td>${toDecimal(i.Preventa, 2)}</td>
+                <td class="${(i.Inventario < i.Preventa) ? 'text-danger fw-bold' : ''}">${toDecimal(i.Inventario, 2)}</td>
+                <td>${toMoney(i.ImportePreventa, 2)}</td>
+            </tr>`).join(''));
+        initDataTable('#tableGeneral');
+
+        $("#lblFecha").html( data[0].FechaPreventa.substring(0,10));
+
+    }
+
+    function initDataTable(selector) {
+        if ($.fn.DataTable.isDataTable(selector)) $(selector).DataTable().destroy();
+        $(selector).DataTable({
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
+            dom: 'Bfrtip',
+            buttons: ['copy', 'excel', 'pdf']
+        });
+    }
+</script>

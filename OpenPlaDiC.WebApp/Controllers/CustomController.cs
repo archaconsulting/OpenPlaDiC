@@ -7,6 +7,13 @@ namespace OpenPlaDiC.WebApp.Controllers
     [Route("[controller]")]
     public class CustomController : Controller
     {
+        private readonly IDataService _dataService;
+
+        public CustomController(IDataService dataService)
+        {
+            _dataService = dataService;
+        }
+
 
         [HttpGet("{viewName}")]
         public IActionResult HandleUnknownActionGet(string viewName)

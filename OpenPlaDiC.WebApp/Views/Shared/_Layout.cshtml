@@ -46,7 +46,7 @@
                         {
                             <li class="nav-item dropdown">
                                 <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownMenuLink" role="button" data-bs-toggle="dropdown" aria-expanded="false">
-                                    <img class="card-img-top rounded-circle" src="/images/admin.png" style="height:32px; width:32px" />&nbsp; @User.FindFirst("FullName")?.Value
+                                    <img class="card-img-top rounded-circle" src="/images/user.png" style="height:32px; width:32px" />&nbsp; @User.FindFirst("FullName")?.Value
                                 </a>
                                 <ul class="dropdown-menu" aria-labelledby="navbarDropdownMenuLink">
 
@@ -89,7 +89,15 @@
     </footer>
 
 
-
+    <script>
+        window.AppUser = {
+            id: '@User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value',
+            userName: '@User.Identity?.Name',
+            fullName: '@User.FindFirst("FullName")?.Value',
+            isAuthenticated: @User.Identity?.IsAuthenticated.ToString().ToLower(),
+            token: '@Html.AntiForgeryToken()'
+        };
+    </script>
 
 
     @await RenderSectionAsync("Scripts", required: false)

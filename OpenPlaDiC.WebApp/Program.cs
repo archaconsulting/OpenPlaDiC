@@ -47,7 +47,7 @@ builder.Services.Configure<RequestLocalizationOptions>(options =>
 });
 
 // Obtener cadena de conexión
-string connString = builder.Configuration.GetConnectionString("LocalDefaultConnection");
+string connString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddScoped(sp => new AppDbContext(connString));
 

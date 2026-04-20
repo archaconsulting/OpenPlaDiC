@@ -1,0 +1,278 @@
+﻿@using OpenPlaDiC.BIZ
+@using System.Data
+@inject IDataService DataService
+@{
+    // Carga inicial de indicadores del día actual
+    var statsResp = DataService.ExecProc("sp_GetDashboardStats");
+    DataRow? stats = (statsResp.IsSuccess && statsResp.Data.Rows.Count > 0) ? statsResp.Data.Rows[0] : null;
+
+    // Obtención de token de verificación para llamadas AJAX
+    var token = "";
+    // Nota: Asegúrate de tener @Html.AntiForgeryToken() en tu layout principal
+}
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+<div class="container-fluid p-3 bg-light">
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <div class="text-muted small fw-bold text-uppercase">Pedidos (Hoy)</div>
+                    <div class="h3 mb-0">@(stats?["TotalPedidos"] ?? "0")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <div class="text-muted small fw-bold text-uppercase">Visitas Realizadas</div>
+                    <div class="h3 mb-0">@(stats?["ClientesVisitados"] ?? "0")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm border-start border-info border-4">
+                <div class="card-body">
+                    <div class="text-muted small fw-bold text-uppercase">Venta Total Bruta</div>
+                    <div class="h3 mb-0">@string.Format("{0:C}", stats?["TotalVenta"] ?? 0)</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <div class="text-muted small fw-bold text-uppercase">Descuentos Totales</div>
+                    <div class="h3 mb-0">@string.Format("{0:C}", stats?["TotalDescuentos"] ?? 0)</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Mapa de Operación en Tiempo Real</div>
+                <div class="card-body p-0">
+                    <div id="map" style="height: 550px;"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Desempeño por Vendedor</div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0" id="tableVendedores">
+                            <thead class="table-light text-muted small">
+                                <tr>
+                                    <th>Vendedor</th>
+                                    <th class="text-center">Ped.</th>
+                                    <th class="text-end">Monto ($)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vendedoresBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Pedidos por Hora / Vendedor</div>
+                <div class="card-body">
+                    <canvas id="chartVentasHora" height="250"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Detalle de Productos e Inventario</div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-striped mb-0">
+                        <thead class="table-light small">
+                            <tr>
+                                <th>SKU/Producto</th>
+                                <th class="text-center">Paq. Vend</th>
+                                <th class="text-end">Total</th>
+                                <th class="text-center">Stock</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productosBody" class="small"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPedido" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Detalle del Pedido</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div id="modalPedidoContent" class="modal-body"></div>
+        </div>
+    </div>
+</div>
+
+@Html.AntiForgeryToken()
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+    let map;
+    const token = $('input[name="__RequestVerificationToken"]').val();
+
+    $(document).ready(function () {
+        initMap();
+        loadDashboardAsync();
+    });
+
+    function initMap() {
+        map = L.map('map').setView([-12.046, -77.042], 12);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+        loadGeocercas();
+        loadPuntosMapa();
+    }
+
+    function loadDashboardAsync() {
+        // Cargar Vendedores
+        getProcDataAsync("sp_GetVendedoresResumen", null, token, (res) => {
+
+            response = JSON.parse(res);
+
+            if (response.IsSuccess) {
+
+
+                let html = response.Data.map(v => `
+                    <tr>
+                        <td class="small fw-bold">${v.Vendedor_Name}</td>
+                        <td class="text-center">${v.TotalPedidos}</td>
+                        <td class="text-end text-primary">${toMoney(v.TotalVenta)}</td>
+                    </tr>`).join('');
+                $('#vendedoresBody').html(html);
+            }
+        }, (err) =>{});
+
+        // Cargar Productos e Inventario
+        getProcDataAsync("sp_GetResumenProductos", null, token, (res) => {
+            if (res.IsSuccess) {
+                let html = res.Data.map(p => `
+                    <tr>
+                        <td><div class="fw-bold">${p.Producto__r_sku__c}</div><div class="text-muted small">${p.Producto__r_name}</div></td>
+                        <td class="text-center">${p.PaquetesVendidos}</td>
+                        <td class="text-end">${toMoney(p.Precio_total__c)}</td>
+                        <td class="text-center fw-bold ${p.Paquetes < 10 ? 'text-danger' : 'text-success'}">${p.Paquetes}</td>
+                    </tr>`).join('');
+                $('#productosBody').html(html);
+            }
+        });
+
+        loadLineChart();
+    }
+
+    function loadGeocercas() {
+        getProcDataAsync("sp_GetDashboardGeocercas", null, token, (res) => {
+            if (res.IsSuccess) {
+                res.Data.forEach(geo => {
+                    // El SP debe devolver "Lat,Lon|Lat,Lon..."
+                    let points = geo.Coordenadas.split('|').map(p => p.split(',').map(Number));
+                    L.polygon(points, {
+                        color: geo.ColorBorde || '#3388ff',
+                        fillColor: geo.ColorRelleno || '#3388ff',
+                        fillOpacity: 0.35
+                    }).addTo(map).bindTooltip("Módulo: " + geo.Modulo_Id);
+                });
+            }
+        });
+    }
+
+    function loadPuntosMapa() {
+        getProcDataAsync("sp_GetPuntosMapa", null, token, (res) => {
+            if (res.IsSuccess) {
+                res.Data.forEach(p => {
+                    const iconColor = p.Tipo === 'Pedido' ? 'blue' : 'orange';
+                    const marker = L.circleMarker([p.Latitud, p.Longitud], {
+                        radius: 8,
+                        fillColor: iconColor,
+                        color: "#fff",
+                        weight: 2,
+                        fillOpacity: 0.8
+                    }).addTo(map);
+
+                    if (p.Tipo === 'Pedido') {
+                        marker.on('click', () => showPedidoDetalle(p.Id));
+                        marker.bindTooltip(`Pedido: ${p.Titulo}<br>Total: ${toMoney(p.Valor)}`);
+                    } else {
+                        marker.bindTooltip(`Cliente: ${p.Titulo}<br>Visita`);
+                    }
+                });
+            }
+        });
+    }
+
+    function showPedidoDetalle(idPedido) {
+        getProcDataAsync("sp_GetPedidoDetalleCompleto", [{ Name: "IdPedido", Value: idPedido }], token, (res) => {
+            if (res.IsSuccess) {
+                const header = res.Data[0];
+                let tableRows = res.Data.map(d => `
+                    <tr>
+                        <td>${d.Producto_Name}</td>
+                        <td class="text-center">${d.Unidades}</td>
+                        <td class="text-end">${toMoney(d.Precio_total__c)}</td>
+                    </tr>`).join('');
+
+                let html = `
+                    <div class="mb-3">
+                        <h6 class="text-primary">${header.Cliente_Name} (${header.Codigo_Cliente__c})</h6>
+                        <small class="text-muted">Fecha: ${header.Fecha_hora_pedido__c} | Pedido: ${header.Name}</small>
+                    </div>
+                    <table class="table table-sm border">
+                        <thead class="bg-light">
+                            <tr><th>Producto</th><th class="text-center">Uds</th><th class="text-end">Subtotal</th></tr>
+                        </thead>
+                        <tbody>${tableRows}</tbody>
+                    </table>
+                    <h5 class="text-end mt-3">Total: <span class="text-success">${toMoney(header.Monto_total)}</span></h5>
+                `;
+                $('#modalPedidoContent').html(html);
+                $('#modalPedido').modal('show');
+            }
+        });
+    }
+
+    function loadLineChart() {
+        getProcDataAsync("sp_GetVentasPorHora", null, token, (response) => {
+                        
+            res = JSON.parse(response);
+
+            if (res.IsSuccess) {
+                const ctx = document.getElementById('chartVentasHora').getContext('2d');
+                // Lógica de mapeo de datos para Chart.js según tu SP
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: [...new Set(res.Data.map(x => x.Hora))],
+                        datasets: [{
+                            label: 'Tendencia Pedidos (Global)',
+                            data: res.Data.map(x => x.Total),
+                            borderColor: '#0d6efd',
+                            tension: 0.4
+                        }]
+                    },
+                    options: { responsive: true, plugins: { legend: { position: 'bottom' } } }
+                });
+            }
+        });
+    }
+</script>
