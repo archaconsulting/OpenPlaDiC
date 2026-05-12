@@ -85,7 +85,7 @@ namespace OpenPlaDiC.CronEcuacorcias
                                 new GlobalItem("Monto_pedido__c", p.Monto_pedido__c.ToString()),
                                 new GlobalItem("Cliente_Name", p.Cliente__r_Name),
                                 new GlobalItem("Cliente_Id", p.Cliente__c),
-                                new GlobalItem("Total_clientes_dia", p.Visita__r_Avance_del_dia__r_Total_clientes__c.ToString()),
+                                new GlobalItem("Total_clientes_dia", p.Avance_del_dia__r_Total_clientes__c.ToString()),
                                 new GlobalItem("Codigo_Cliente__c", p.Codigo_Cliente__c),
                                 new GlobalItem("DNI_RUC_CE_RFC__c", p.Cliente__r_DNI_RUC_CE_RFC__c),
                                 new GlobalItem("Latitud_cliente__c", p.Latitud_cliente__c),
@@ -223,7 +223,7 @@ namespace OpenPlaDiC.CronEcuacorcias
         public double Monto_pedido__c { get; set; }
         public string Cliente__r_Name { get; set; }
         public string Cliente__c { get; set; }
-        public double Visita__r_Avance_del_dia__r_Total_clientes__c { get; set; }
+        public double Avance_del_dia__r_Total_clientes__c { get; set; }
         public string Codigo_Cliente__c { get; set; }
         public string Cliente__r_DNI_RUC_CE_RFC__c { get; set; }
         public string Latitud_cliente__c { get; set; }

@@ -1,0 +1,346 @@
+@using OpenPlaDiC.Framework
+@Html.AntiForgeryToken()
+
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css" />
+
+<div class="container-fluid py-3">
+
+<div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Pedidos</h6>
+                    <h3 id="statPedidos">0</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Efectividad de visita</h6>
+                    <h3><span id="statVisitas">0</span> %</h3>
+                    <p class="text-success">Clientes programados: <span id="statClientes">0</span></p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Venta Bruta</h6>
+                    <h3 id="statVenta">$0.00</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-uppercase small text-muted fw-bold">Descuentos</h6>
+                    <h3 id="statDescuentos">$0.00</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-12">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Avance de Pedidos por Hora</div>
+                <div class="card-body" style="height: 300px;"><canvas id="chartTimeline"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-12">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Mapa de Ruta (Hoy)</div>
+                <div class="card-body p-0"><div id="map" style="height: 400px;"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <span class="fw-bold">Pedidos en Tiempo Real</span>
+            <div id="divAlertas" class="small text-danger fw-bold"></div>
+        </div>
+        <div class="card-body">
+            <table id="tablePedidos" class="table table-hover align-middle">
+                <thead><tr><th>Hora</th><th>Pedido</th><th>Vendedor</th><th>Cliente</th><th>Monto</th><th>Acción</th></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalDetallePedido" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">Detalle de Pedido</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="modalBody"></div></div></div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+
+
+<script>
+
+    let map;
+    let polygonLayer; // Nueva capa para polígonos
+    let markers;
+
+
+
+    $(document).ready(function() {
+        // Inicialización del mapa
+        map = L.map('map').setView([-2.0283658, -79.7117342], 10);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        
+        // IMPORTANTE: Definir el orden de las capas
+        polygonLayer = L.layerGroup().addTo(map); // Se añade primero (fondo)
+        
+        // Inicialización de la capa de marcadores
+        markers = L.layerGroup().addTo(map); 
+
+        cargarDatos();
+        setInterval(cargarDatos, 60000);
+    });
+
+    function renderGeocercas(data) {
+        polygonLayer.clearLayers(); // Limpiar polígonos previos
+
+        // 1. Agrupar puntos por nombre de geocerca
+        const grupos = {};
+        data.forEach(item => {
+            if (!grupos[item.Nombre]) {
+                grupos[item.Nombre] = {
+                    color: item.Colorgeocerca,
+                    borde: item.Colorbordegeocerca,
+                    puntos: []
+                };
+            }
+            // Convertir string "-2.12,-79.56" a array [lat, lng]
+            const coords = item.Coordenada.split(',').map(Number);
+            grupos[item.Nombre].puntos.push(coords);
+        });
+
+        // 2. Dibujar polígonos
+        Object.keys(grupos).forEach(nombre => {
+            const g = grupos[nombre];
+            L.polygon(g.puntos, {
+                color: '#' + g.borde,      // Color borde
+                fillColor: '#' + g.color,  // Color relleno
+                fillOpacity: 0.3,
+                weight: 2
+            })
+            .bindPopup(`<b>${nombre}</b>`)
+            .addTo(polygonLayer);
+        });
+    }
+
+    function cargarDatos() {
+        const token = $('input[name="__RequestVerificationToken"]').val();
+
+
+        // Nueva llamada para Geocercas
+        getProcDataAsync("sp_GetGeocercas", [], token, (response) => {
+            const res = JSON.parse(response);
+            if(res.IsSuccess) {
+                renderGeocercas(res.Data);
+            }
+        });
+
+
+        getProcDataAsync("sp_GetDashboardStats", [], token, (response) => {
+            const res = JSON.parse(response);
+            if (res.IsSuccess) {
+                const data = res.Data;
+                const stats = data[0]; // Asumiendo que devuelve una fila
+                $('#statPedidos').text(stats.TotalPedidos || 0);
+                $('#statVisitas').text( toDecimal( stats.ClientesVisitados*100/stats.TotalClientes || 0),2) ;
+                $('#statVenta').text(toMoney(stats.TotalVenta || 0));
+                $('#statDescuentos').text(toMoney(stats.TotalDescuentos || 0));
+                $('#statClientes').text( stats.TotalClientes || 0);
+            }
+        });
+
+
+        
+        // Cargar Tabla y Mapa
+        getProcDataAsync("sp_GetMonitorPedidosHoy", [], token, (response) => {
+
+            const res = JSON.parse(response);
+
+
+            if(res.IsSuccess) {
+                renderTableAndMap(res.Data);
+            }
+        });
+
+        // Cargar Gráfica
+        getProcDataAsync("sp_GetMonitorTimelineHoy", [], token, (response) => {
+            const res = JSON.parse(response);
+
+            if(res.IsSuccess) renderChart(res.Data);
+        });
+    }
+
+   function renderTableAndMap(data) {
+        if ($.fn.DataTable.isDataTable('#tablePedidos')) $('#tablePedidos').DataTable().destroy();
+        markers.clearLayers();
+
+
+        $('#tablePedidos tbody').html(data.map(p => {
+
+            const fecha = new Date(p.Fecha_hora_pedido__c);
+
+
+            if(p.Latitud_cliente__c && p.Longitud_cliente__c) {
+                L.marker([p.Latitud_cliente__c, p.Longitud_cliente__c]).addTo(markers)
+                 .bindPopup(`<b>${p.Cliente_Name}</b><br>${p.Vendedor_Name}`);
+            }
+            return `<tr>
+                <td data-order="${fecha.getTime()}" >${fecha.toLocaleTimeString()}</td>
+                <td>${p.Pedido}</td>
+                <td>${p.Vendedor_Name}</td>
+                <td>${p.Cliente_Name} <br><small class="color-secondary">RUC/CE: ${p.RUC} </small></td>
+                <td>${toMoney(p.Monto_pedido__c)}</td>
+                <td><button class="btn btn-sm btn-outline-primary" onclick="verDetalle('${p.IdPedido}')">Ver</button></td>
+            </tr>`;
+        }).join(''));
+
+        $('#tablePedidos').DataTable({
+            dom: 'Bfrtip',
+            buttons: ['copy', 'excel', 'pdf'],
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
+            order: [[0, 'desc']]
+        });
+
+        detectarInactividad(data);
+    }
+
+
+    function detectarInactividad(data) {
+        // Si no hay pedidos en la última hora, alertar
+        const ultimaHora = new Date().getHours() - 1;
+        const hayActividadReciente = data.some(p => new Date(p.Fecha_hora_pedido__c).getHours() >= ultimaHora);
+        if(!hayActividadReciente) {
+            $('#divAlertas').text("⚠️ Alerta: Sin actividad registrada en la última hora");
+        }
+    }
+
+    function verDetalleX(id) {
+        // Implementar llamada a SP de detalle pasando el ID
+        // getProcDataAsync("sp_GetDetallePedido", [{Key: "Id", Value: id}], ...
+        $('#modalDetallePedido').modal('show');
+    }
+
+    function verDetalle(id) {
+    const token = $('input[name="__RequestVerificationToken"]').val();
+    const $modalBody = $('#modalBody');
+    const $modal = $('#modalDetallePedido');
+
+    // 1. Preparar modal: mostrar cargando
+    $modalBody.html('<div class="text-center p-3"><div class="spinner-border text-primary"></div><p>Cargando productos...</p></div>');
+    $modal.modal('show');
+
+    // 2. Consultar datos
+    const params = [{ Name: "IdPedido", Value: id }];
+    
+    getProcDataAsync("sp_GetDetallePedido", params, token, (response) => {
+        const res = JSON.parse(response);
+
+        if (res.IsSuccess) {
+            const data = res.Data;
+            
+            if (data.length === 0) {
+                $modalBody.html('<div class="alert alert-warning">No se encontraron productos para este pedido.</div>');
+                return;
+            }
+
+            // 3. Renderizar tabla de detalle
+            let html = `
+                <table class="table table-sm table-hover">
+                    <thead class="table-light">
+                        <tr><th>Producto</th><th class="text-center">Cajas</th><th class="text-center">Unidades</th><th class="text-end">Descuento</th><th class="text-end">Total</th></tr>
+                    </thead>
+                    <tbody>`;
+            
+            data.forEach(d => {
+                html += `<tr>
+                    <td class="${d.Procedimiento == '001' ? 'text-primary' : 'text-success'}" >${d.SKU}<br>${d.Producto} </td>
+                    <td class="text-center">${d.Cajas}</td>
+                    <td class="text-center">${d.Unidades}</td>
+                    <td class="text-end">${toMoney(d.Descuento)}</td>
+                    <td class="text-end">${toMoney(d.Importe)}</td>
+                </tr>`;
+            });
+            
+            html += `</tbody></table>`;
+            $modalBody.html(html);
+        } else {
+            $modalBody.html('<div class="alert alert-danger">Error al cargar el detalle del pedido.</div>');
+        }
+    });
+}
+
+
+    /**
+    * Renderiza la gráfica de línea con el avance de pedidos por hora
+    * param {Array} data - Array de objetos con {Hora, TotalPedidos}
+    */
+    function renderChart(data) {
+        // 1. Preparar los datos
+        // Aseguramos que los datos estén ordenados por hora
+        data.sort((a, b) => a.Hora - b.Hora);
+
+        const labels = data.map(item => `${item.Hora.toString().padStart(2, '0')}:00`);
+        const values = data.map(item => item.TotalPedidos);
+
+        // 2. Referencia al contexto
+        const ctx = document.getElementById('chartTimeline').getContext('2d');
+
+        // 3. Destruir instancia anterior si existe (evita errores al recargar)
+        if (window.myChart) {
+            window.myChart.destroy();
+        }
+
+        // 4. Crear nueva instancia
+        window.myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Pedidos por hora',
+                    data: values,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#0d6efd'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { precision: 0 } // Solo mostrar enteros
+                    }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+
+</script>

@@ -1,0 +1,213 @@
+@using OpenPlaDiC.Framework
+@Html.AntiForgeryToken()
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css" />
+
+<div class="container-fluid py-3" id="vendedorDashboard">
+    
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-primary border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-muted small fw-bold text-uppercase">Vendedores en Ruta</h6>
+                    <h2 id="kpiVendedores">0</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-success border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-muted small fw-bold text-uppercase">Efectividad Cobertura</h6>
+                    <h2 id="kpiEfectividad">0%</h2>
+                    <div class="progress" style="height: 6px;">
+                        <div id="barEfectividad" class="progress-bar bg-success" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-info border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-muted small fw-bold text-uppercase">Venta Total Bruta</h6>
+                    <h2 id="kpiVentaTotal">$0.00</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-0 border-start border-warning border-4 h-100">
+                <div class="card-body">
+                    <h6 class="text-muted small fw-bold text-uppercase">Pedidos Hoy</h6>
+                    <h2 id="kpiPedidos">0</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-lg-5">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Distribución por Lista de Precios</div>
+                <div class="card-body" style="position: relative; min-height:300px;">
+                    <canvas id="chartTipoVenta"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-7">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Ranking de Productividad (Vendedores)</div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table id="tableRanking" class="table table-hover align-middle w-100">
+                            <thead class="table-light small">
+                                <tr>
+                                    <th>Vendedor</th>
+                                    <th class="text-center">Visitas / Meta</th>
+                                    <th class="text-center">% Ruta</th>
+                                    <th class="text-end">Monto Venta</th>
+                                </tr>
+                            </thead>
+                            <tbody></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+
+<script>
+    $(document).ready(function () {
+        const token = $('input[name="__RequestVerificationToken"]').val();
+
+        // 1. LLAMADA A KPIs
+        getProcDataAsync("sp_GetVendedorKPIs", [], token, function (response) {
+            const res = JSON.parse(response);
+            if (res.IsSuccess) {
+                const data = (typeof res.Data === 'string') ? JSON.parse(res.Data) : res.Data;
+                const s = data[0] || {};
+                
+                $('#kpiVendedores').text(s.VendedoresActivos || 0);
+                $('#kpiPedidos').text(s.TotalPedidos || 0);
+                $('#kpiVentaTotal').text(toMoney(s.VentaTotal || 0));
+                $('#kpiEfectividad').text((s.PorcentajeEfectividad || 0) + '%');
+                $('#barEfectividad').css('width', (s.PorcentajeEfectividad || 0) + '%');
+            }
+        });
+
+        // 2. LLAMADA A RANKING Y DATOS DE GRÁFICA
+        getProcDataAsync("sp_GetVendedorRankingData", [], token, function (response) {
+            const res = JSON.parse(response);
+
+            if (res.IsSuccess) {
+                const data = (typeof res.Data === 'string') ? JSON.parse(res.Data) : res.Data;
+
+                // Renderizar la tabla de Ranking
+                renderRankingTable(data);
+
+                // Agrupar datos por Lista de Precios para la gráfica
+                const groupedData = agruparPorListaPrecios(data);
+                renderDoughnutChart(groupedData);
+            }
+        });
+
+
+        // 3. LLAMADA A RANKING Y DATOS DE GRÁFICA
+        getProcDataAsync("sp_ListaPrecioRankingData", [], token, function (response) {
+            const res = JSON.parse(response);
+
+            if (res.IsSuccess) {
+                const data = (typeof res.Data === 'string') ? JSON.parse(res.Data) : res.Data;
+
+                // Renderizar la tabla de Ranking
+                //renderRankingTable(data);
+                renderDoughnutChart(data);
+            }
+        });
+
+
+
+
+    });
+
+    // Procesa el array de vendedores para sumar ventas por lista de precios
+    function agruparPorListaPrecios(data) {
+        const resumen = data.reduce((acc, obj) => {
+            const key = obj.Lista_de_precios_Name || "General";
+            acc[key] = (acc[key] || 0) + parseFloat(obj.MontoVenta || 0);
+            return acc;
+        }, {});
+
+        return Object.keys(resumen).map(key => ({
+            NombreLista: key,
+            Total: resumen[key]
+        }));
+    }
+
+    function renderRankingTable(data) {
+        if ($.fn.DataTable.isDataTable('#tableRanking')) $('#tableRanking').DataTable().destroy();
+
+        $('#tableRanking tbody').html(data.map(v => `
+            <tr>
+                <td>
+                    <div class="fw-bold">${v.Vendedor_Name}</div>
+                    
+                </td>
+                <td class="text-center">${v.VisitasReales} / ${v.MetaVisitas}</td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                            <div class="progress-bar ${v.CumplimientoRuta < 75 ? 'bg-danger' : 'bg-success'}" 
+                                 style="width: ${v.CumplimientoRuta}%"></div>
+                        </div>
+                        <small class="fw-bold">${v.CumplimientoRuta}%</small>
+                    </div>
+                </td>
+                <td class="text-end fw-bold text-primary">${toMoney(v.MontoVenta)}</td>
+            </tr>`).join(''));
+
+        $('#tableRanking').DataTable({
+            language: { url: '//cdn.datatables.net/plug-ins/1.13.6/i18n/es-ES.json' },
+            dom: 'Bfrtip',
+            buttons: ['excel', 'pdf'],
+            order: [[3, 'desc']], // Ordenar por monto de venta
+            pageLength: 25
+        });
+    }
+
+    function renderDoughnutChart(chartData) {
+        const ctx = document.getElementById('chartTipoVenta').getContext('2d');
+        if (window.vendedorChart) window.vendedorChart.destroy();
+
+        window.vendedorChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: chartData.map(d => d.NombreLista),
+                datasets: [{
+                    data: chartData.map(d => d.Total),
+                    backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#dc3545', '#6610f2', '#fd7e14']
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.label}: ${toMoney(ctx.raw)}`
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>

@@ -1,0 +1,215 @@
+@using OpenPlaDiC.Framework
+@Html.AntiForgeryToken()
+
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css" />
+
+<div class="container-fluid py-3" id="efectividadDashboard">
+    <div class="card shadow-sm border-0 mb-4">
+        <div class="card-body">
+            <div class="row align-items-end g-3">
+                <div class="col-md-4">
+                    <label class="small fw-bold">Fecha de Facturación</label>
+                    <input type="date" id="txtFechaFact" class="form-control" />
+                </div>
+                <div class="col-md-4">
+                    <label class="small fw-bold">Fecha de Preventa</label>
+                    <input type="date" id="txtFechaPrev" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" onclick="consultarDatos()">Consultar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="card p-3 shadow-sm border-start border-4 border-primary"><h6 class="text-muted">Efectividad Paquetes</h6><h3 id="kpiEfectividadPaq">0%</h3></div></div>
+        <div class="col-md-4"><div class="card p-3 shadow-sm border-start border-4 border-success"><h6 class="text-muted">Efectividad Liquidación</h6><h3 id="kpiEfectividadMonto">0%</h3></div></div>
+        <div class="col-md-4"><div class="card p-3 shadow-sm border-start border-4 border-danger"><h6 class="text-muted">Brecha de Venta</h6><h3 id="kpiBrecha">$0.00</h3></div></div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Comparativa Monetaria por Vendedor</div>
+                <div class="card-body"><canvas id="chartEfectividad" style="max-height: 300px;"></canvas></div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-white fw-bold">Resumen por Vendedor</div>
+                <div class="card-body">
+                    <table id="tableResumen" class="table table-sm table-hover align-middle">
+                        <thead class="table-light small">
+                            <tr><th>Vendedor</th><th>Imp. Preventa</th><th>Imp. Liquidado</th><th>% Efec.</th></tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header bg-white fw-bold">Detalle de Conversión por Producto</div>
+        <div class="p-3">
+            <table id="tableEfectividad" class="table table-hover align-middle w-100">
+                <thead class="table-light small">
+                    <tr><th>Vendedor</th><th>Producto</th><th>P. Prev.</th><th>P. Entr.</th><th>Imp. Prev.</th><th>Imp. Liq.</th><th>% Efec.</th></tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+
+<script>
+    $(document).ready(function () {
+        initDates();
+        $('#txtFechaFact').change(function() {
+            $('#txtFechaPrev').val(calculatePrevDate($(this).val()));
+        });
+    });
+
+    function initDates() {
+        let now = new Date();
+        let today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        let factDate = new Date(today);
+        factDate.setDate(today.getDate() - 1); // Ayer
+        
+        // Formatear
+        const factStr = `${factDate.getFullYear()}-${String(factDate.getMonth() + 1).padStart(2, '0')}-${String(factDate.getDate()).padStart(2, '0')}`;
+        
+        $('#txtFechaFact').val(factStr);
+        $('#txtFechaPrev').val(calculatePrevDate(factStr));
+    }
+
+    function calculatePrevDate(factDateStr) {
+        let d = new Date(factDateStr + "T00:00:00");
+        let dayOfWeek = d.getDay();
+
+        // Lógica: Si lunes (1), saltar a sábado (-2), si no, día anterior (-1)
+        if (dayOfWeek === 1) d.setDate(d.getDate() - 2);
+        else d.setDate(d.getDate() - 1);
+
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function consultarDatos() {
+        const token = $('input[name="__RequestVerificationToken"]').val();
+        const params = [
+            { Name: "FechaPreventa", Value: $('#txtFechaPrev').val() },
+            { Name: "FechaFacturacion", Value: $('#txtFechaFact').val() }
+        ];
+
+        getProcDataAsync("sp_GetEfectividadPreventaVendedor", params, token, (response) => {
+            const res = JSON.parse(response);
+            if (res.IsSuccess) {
+                const data = (typeof res.Data === 'string') ? JSON.parse(res.Data) : res.Data;
+                renderDashboard(data);
+            }
+        });
+    }
+
+    function renderDashboard(data) {
+        let totalPPrev = 0, totalPEntr = 0, totalIPrev = 0, totalILiq = 0;
+        let resumen = {};
+
+        // Limpiar tabla detalle
+        if ($.fn.DataTable.isDataTable('#tableEfectividad')) $('#tableEfectividad').DataTable().destroy();
+
+        $('#tableEfectividad tbody').html(data.map(i => {
+            totalPPrev += i.PaquetesPreventa;
+            totalPEntr += i.PaquetesEntrega;
+            totalIPrev += i.ImportePreventa;
+            totalILiq += i.ImporteLiquidado;
+
+            // Agrupar para resumen
+            if (!resumen[i.Vendedor_Name]) resumen[i.Vendedor_Name] = { prev: 0, liq: 0 };
+            resumen[i.Vendedor_Name].prev += i.ImportePreventa;
+            resumen[i.Vendedor_Name].liq += i.ImporteLiquidado;
+
+            // Lógica tabla detalle
+            let efecStr = "";
+            let cssClass = "";
+            if (i.PaquetesPreventa === 0 && i.PaquetesEntrega > 0) {
+                efecStr = "Venta Directa";
+                cssClass = "text-info fw-bold";
+            } else if (i.PaquetesPreventa > 0) {
+                let efec = (i.PaquetesEntrega / i.PaquetesPreventa) * 100;
+                efecStr = efec.toFixed(1) + "%";
+                cssClass = (efec > 100) ? "text-primary fw-bold" : (efec < 90 ? "text-danger fw-bold" : "text-success");
+            } else {
+                efecStr = "0%";
+                cssClass = "text-muted";
+            }
+
+            return `<tr>
+                <td>${i.Vendedor_Name}</td>
+                <td><small>${i.Codigoprincipal} - ${i.Nombre}</small></td>
+                <td>${toDecimal(i.PaquetesPreventa, 0)}</td>
+                <td>${toDecimal(i.PaquetesEntrega, 0)}</td>
+                <td>${toMoney(i.ImportePreventa)}</td>
+                <td>${toMoney(i.ImporteLiquidado)}</td>
+                <td class="${cssClass}">${efecStr}</td>
+            </tr>`;
+        }).join(''));
+
+        // Render Resumen
+        let resRows = "", labels = [], dataPrev = [], dataLiq = [];
+        for (let v in resumen) {
+            let efec = resumen[v].prev > 0 ? (resumen[v].liq / resumen[v].prev * 100).toFixed(1) : 0;
+            resRows += `<tr><td>${v}</td><td>${toMoney(resumen[v].prev)}</td><td>${toMoney(resumen[v].liq)}</td><td class="fw-bold">${efec}%</td></tr>`;
+            labels.push(v);
+            dataPrev.push(resumen[v].prev);
+            dataLiq.push(resumen[v].liq);
+        }
+        $('#tableResumen tbody').html(resRows);
+
+        // Render Gráfica
+        renderChart(labels, dataPrev, dataLiq);
+
+        // Update KPIs
+        $('#kpiEfectividadPaq').text(((totalPPrev > 0 ? (totalPEntr / totalPPrev) * 100 : 0)).toFixed(1) + '%');
+        $('#kpiEfectividadMonto').text(((totalIPrev > 0 ? (totalILiq / totalIPrev) * 100 : 0)).toFixed(1) + '%');
+        $('#kpiBrecha').text(toMoney(totalIPrev - totalILiq));
+
+        // Iniciar DataTable
+        $('#tableEfectividad').DataTable({
+            language: {
+                "emptyTable": "No hay datos",
+                "info": "Mostrando _START_ a _END_ de _TOTAL_ registros",
+                "lengthMenu": "Mostrar _MENU_ registros",
+                "search": "Buscar:",
+                "paginate": { "first": "Primero", "last": "Último", "next": "Sig", "previous": "Ant" }
+            },
+            dom: 'Bfrtip',
+            buttons: ['copy', 'excel', 'pdf']
+        });
+    }
+
+    function renderChart(labels, dataPrev, dataLiq) {
+        const ctx = document.getElementById('chartEfectividad').getContext('2d');
+        if (window.myChart) window.myChart.destroy();
+        window.myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [
+                    { label: 'Preventa', data: dataPrev, backgroundColor: '#6c757d' },
+                    { label: 'Liquidado', data: dataLiq, backgroundColor: '#198754' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+    }
+</script>
