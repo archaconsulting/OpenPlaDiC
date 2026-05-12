@@ -28,6 +28,20 @@
   <ItemGroup>
 	    <!-- Explicitly include each .cshtml files in the subfolders under Views  -->
 	  <Content Update="Views\**\*.cshtml" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Components/" />
+    <Folder Include="Views/Dashboard/" />
+    <Folder Include="Views/DynamicView/" />
+    <Folder Include="Views/EmailSettings/" />
+    <Folder Include="Views/EntityManager/" />
+    <Folder Include="Views/Error/" />
+    <Folder Include="Views/Search/" />
+    <Folder Include="Views/Security/" />
+    <Folder Include="Views/Shared/Components/Breadcrumb/" />
+    <Folder Include="Views/Shared/Components/Sidebar/" />
+    <Folder Include="Views/SystemParameter/" />
   </ItemGroup>	
 
 </Project>

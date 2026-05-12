@@ -1,0 +1,377 @@
+﻿@model OpenPlaDiC.Core.Models.Entity
+
+<div class="container-fluid mt-4">
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-dark text-white">Configuración de la Entidad</div>
+                <div class="card-body">
+                    <h5><i class="bi @Model.Icon"></i> @Model.Label</h5>
+                    <p class="small text-muted">Tabla: <code>@Model.Name</code> | Prefijo: <strong>@Model.Prefix</strong></p>
+                    <hr />
+                    <button class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#modalProperty">
+                        <i class="bi bi-plus-square"></i> Agregar Campo
+                    </button>
+
+
+                    <button class="btn btn-outline-info w-100 mt-2" onclick="showPreview('@Model.Name')">
+                        <i class="bi bi-eye"></i> Vista Previa
+                    </button>
+
+                </div>
+            </div>
+        </div>
+
+
+
+        <!-- Modal para la Previsualización -->
+        <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                    <div class="modal-header bg-info text-white">
+                        <h5 class="modal-title"><i class="bi bi-layout-text-window-reverse"></i> Previsualización de Formulario</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body bg-light" id="previewContainer">
+                        <!-- El contenido se cargará aquí vía AJAX -->
+                        <div class="text-center p-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2">Generando formulario...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="col-md-8">
+            <div class="card shadow-sm">
+                <div class="card-header">Campos de la Tabla (Propiedades)</div>
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Etiqueta</th>
+                                <th>Nombre SQL</th>
+                                <th>Tipo</th>
+                                <th>Ubicación (R,C)</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var prop in Model.Properties.OrderBy(p => p.GridRow).ThenBy(p => p.GridColumn))
+                            {
+                                <tr>
+                                    <td><strong>@prop.Label</strong></td>
+                                    <td>
+                                        <code>@prop.Name</code>
+                                        @if (prop.Name == "Name") { <span class="badge bg-secondary ms-1">Sistema</span> }
+      
+                                    </td>
+                                    <td><span class="badge bg-info">@prop.DataTypeId</span></td>
+                                    <td>@prop.GridRow , @prop.GridColumn</td>
+                                    
+                                    
+                                    <td class="text-end">
+
+
+                                        <!-- Botón Editar Metadata -->
+                                        <button type="button" 
+                                                onclick="editProperty('@prop.Id', '@prop.Label', '@prop.GridRow', '@prop.GridColumn', '@prop.IsRequired')" 
+                                                class="btn btn-sm btn-outline-primary" 
+                                                title="Editar configuración">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
+
+                                        <button onclick="editLayout('@prop.Id', @prop.GridRow, @prop.GridColumn)" class="btn btn-sm btn-outline-primary d-none" >
+                                            <i class="bi bi-grid-3x3"></i>
+                                        </button>
+                                        
+                                        @if (prop.Name != "Name") // BLOQUEO: El campo 'Name' no se puede borrar
+                                        {
+                                            <button onclick="confirmDropProperty('@Model.Name', '@prop.Name')" class="btn btn-sm btn-outline-danger">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <button class="btn btn-sm btn-light border" disabled title="Campo de sistema requerido">
+                                                <i class="bi bi-lock"></i>
+                                            </button>
+                                        }
+                                    </td>
+
+
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+
+<!-- Modal para Agregar Campo (Propiedad) -->
+<div class="modal fade" id="modalProperty" tabindex="-1" aria-labelledby="modalPropertyLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <form asp-controller="EntityManager" asp-action="AddProperty" method="post" class="modal-content">
+
+            <!-- Pasamos el nombre de la entidad para que el controlador sepa dónde crear la columna -->
+            <input type="hidden" name="entityName" value="@Model.Name" />
+            
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title" id="modalPropertyLabel"><i class="bi bi-plus-square"></i> Nuevo Campo en @Model.Name</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Etiqueta (UI)</label>
+                        <input name="Label" class="form-control" placeholder="Ej: Teléfono de Oficina" required />
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Nombre SQL (Columna)</label>
+                        <input name="Name" class="form-control" placeholder="Ej: OfficePhone" required 
+                               oninput="validatePropertyName(this)" />
+                    </div>
+
+
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Tipo de Dato</label>
+                        <select id="selectDataType" name="DataTypeId" class="form-select" onchange="toggleEntitySelect(this.value)">
+                            <option value="">-- Seleccionar --</option>
+                            @foreach (var type in (List<OpenPlaDiC.Core.Models.DataType>)ViewBag.DataTypes)
+                            {
+                                <option value="@type.Id">@type.Name</option>
+                            }
+                        </select>
+                    </div>
+
+
+                    <!-- Selector de Entidad Destino (Oculto por defecto) -->
+                    <div id="divSourceEntity" class="col-12 d-none">
+                        <label class="form-label fw-bold text-primary">Entidad de Referencia (Tabla Origen)</label>
+                        <select name="SourceDefinition" class="form-select border-primary">
+                            <option value="">-- Seleccionar Tabla --</option>
+                            @foreach (var entity in (IEnumerable<OpenPlaDiC.Core.Models.Entity>)ViewBag.AllEntities)
+                            {
+                                <option value="@entity.Name">@entity.Label (@entity.Name)</option>
+                            }
+                        </select>
+                        <div class="form-text">Define de qué tabla se obtendrán los datos para este campo.</div>
+                    </div>                    
+
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Fila (Row)</label>
+                        <input type="number" name="GridRow" class="form-control" value="1" min="1" />
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Posición (Columna)</label>
+                        <select name="GridColumn" class="form-select">
+                            <option value="1">Lado Izquierdo (1)</option>
+                            <option value="2">Lado Derecho (2)</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="IsRequired" value="true">
+                            <label class="form-check-label">¿Es campo obligatorio?</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Crear Columna Físicamente</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+
+
+<!-- Modal para Editar Propiedad -->
+<div class="modal fade" id="editPropertyModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form asp-controller="EntityManager" asp-action="UpdatePropertyMetadata" method="post" class="modal-content">
+            <input type="hidden" id="editPropId" name="Id" />
+            
+            
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Editar Configuración del Campo</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label class="form-label fw-bold">Etiqueta Visual (Label)</label>
+                        <input id="editPropLabel" name="Label" class="form-control" required />
+                        <div class="form-text">Ej: Cambia "Name" por "Nombre del Proyecto" o "Razón Social".</div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Fila (Row)</label>
+                        <input id="editPropRow" type="number" name="GridRow" class="form-control" min="1" required />
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold">Posición (Columna)</label>
+                        <select id="editPropCol" name="GridColumn" class="form-select">
+                            <option value="1">Lado Izquierdo (1)</option>
+                            <option value="2">Lado Derecho (2)</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12">
+                        <div class="form-check form-switch mt-2">
+                            <input id="editPropRequired" class="form-check-input" type="checkbox" name="IsRequired" value="true">
+                            <label class="form-check-label fw-bold">Campo Obligatorio</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+
+@* Agregar en la sección de scripts de Details.cshtml *@
+
+
+
+<script>
+
+
+    function validatePropertyName(input) {
+
+
+        input.value = input.value.replace(/[^a-zA-Z]/g, '')
+
+        const val = input.value.toLowerCase();
+        if (val === "name" || val === "id" || val === "folio") {
+            Swal.fire('Error', 'No puedes usar nombres de columnas reservadas por el sistema (Id, Name, Folio).', 'error');
+            input.value = "";
+        }
+    }
+
+    function toggleEntitySelect(val) {
+        // Asumiendo que 10 es el ID para RelatedEntity
+        if (val == "10") {
+            document.getElementById('divSourceEntity').classList.remove('d-none');
+        } else {
+            document.getElementById('divSourceEntity').classList.add('d-none');
+            document.getElementsByName('SourceDefinition')[0].value = "";
+        }
+    }
+
+    // Función para borrar propiedad
+    function confirmDropProperty(entityName, propName) {
+        Swal.fire({
+            title: '¿Eliminar campo?',
+            text: `Se borrará la columna '${propName}' y todos sus datos de forma permanente.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#d33',
+            confirmButtonText: 'Sí, borrar columna'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Crear un form temporal para enviar el POST
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '@Url.Action("DropProperty")';
+                
+                const inputEntity = document.createElement('input');
+                inputEntity.type = 'hidden';
+                inputEntity.name = 'entityName';
+                inputEntity.value = entityName;
+                
+                const inputProp = document.createElement('input');
+                inputProp.type = 'hidden';
+                inputProp.name = 'propertyName';
+                inputProp.value = propName;
+
+                form.appendChild(inputEntity);
+                form.appendChild(inputProp);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
+    }
+
+    // Función simple para editar Row/Column vía Prompt (Mejorable con Drag & Drop)
+    function editLayout(propId, currentRow, currentCol) {
+        Swal.fire({
+            title: 'Ajustar Diseño',
+            html: 
+
+            `<label class="mt-2">Fila</label><input id="row" type="number" class="swal2-input" value="${currentRow}">` +
+            `<label class="mt-2">Columna (1 o 2)</label>` +
+            `<select id="col" class="swal2-input">
+                <option value="1" ${currentCol == 1 ? 'selected' : ''}>Izquierda (1)</option>
+                <option value="2" ${currentCol == 2 ? 'selected' : ''}>Derecha (2)</option>
+            </select>`,
+
+            showCancelButton: true,
+            preConfirm: () => {
+                return {
+                    propertyId: propId,
+                    row: document.getElementById('row').value,
+                    column: document.getElementById('col').value
+                }
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                const data = { entityName: '@Model.Name', layout: [result.value] };
+                $.post('@Url.Action("UpdateLayout")', data, function(res) {
+                    if(res.isSuccess) location.reload();
+                    else Swal.fire('Error', res.message, 'error');
+                });
+            }
+        });
+    }
+
+
+    function editProperty(id, label, row, col, isRequired) {
+        // Asignar valores al modal
+        $('#editPropId').val(id);
+        $('#editPropLabel').val(label);
+        $('#editPropRow').val(row);
+        $('#editPropCol').val(col);
+        
+        // Manejo del checkbox (Bootstrap Switch)
+        $('#editPropRequired').prop('checked', isRequired === 'True' || isRequired === true);
+
+        // Mostrar modal
+        var modal = new bootstrap.Modal(document.getElementById('editPropertyModal'));
+        modal.show();
+    }
+
+
+
+    function showPreview(entityName) {
+        const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+        const container = document.getElementById('previewContainer');
+        
+        modal.show();
+        container.innerHTML = '<div class="text-center p-5"><div class="spinner-border text-primary"></div></div>';
+
+        // Asegúrate de que la URL coincida con tu ruta configurada [Route("EntityManager")]
+        $.get(`/EntityManager/Preview/${entityName}`, function (html) {
+            container.innerHTML = html;
+            $(container).find('button[type="submit"]').hide();
+        }).fail(function(xhr) {
+            console.error(xhr.responseText); // Ver el error real en F12
+            container.innerHTML = '<div class="alert alert-danger">Error: ' + xhr.status + ' - No se pudo generar la vista.</div>';
+        });
+    }    
+
+</script>

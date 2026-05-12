@@ -1,0 +1,83 @@
+﻿@model IEnumerable<OpenPlaDiC.Core.Models.SystemParameter>
+
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-sliders text-primary"></i> System Parameters</h2>
+
+        <div>
+            <button class="btn btn-outline-warning" onclick="reloadKernelCache()">
+                <i class="bi bi-arrow-clockwise"></i> Force Reload
+            </button>
+        </div>
+
+        <span class="badge bg-info">Master Mode Active</span>
+    </div>
+
+
+    @foreach (var category in Model.GroupBy(p => p.Category))
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-dark text-white fw-bold">
+                <i class="bi bi-tag-fill me-2"></i> @category.Key
+            </div>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="width: 30%;">Key</th>
+                            <th>Value</th>
+                            <th style="width: 100px;">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var param in category)
+                        {
+                            <tr>
+                                <td>
+                                    <span class="fw-bold">@param.Key</span><br />
+                                    <small class="text-muted">@param.Description</small>
+                                </td>
+                                <td>
+                                    @if (param.Key.Contains("PASS"))
+                                    {
+                                        <input type="password" id="val-@param.Id" class="form-control form-control-sm" value="@param.Value" />
+                                    }
+                                    else
+                                    {
+                                        <input type="text" id="val-@param.Id" class="form-control form-control-sm" value="@param.Value" />
+                                    }
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-primary" onclick="updateParam('@param.Key', '@param.Id')">
+                                        <i class="bi bi-save"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+</div>
+
+@section Scripts {
+    <script>
+        function updateParam(key, id) {
+            const val = document.getElementById('val-' + id).value;
+            $.post('/SystemParameter/Update', { key: key, value: val }, function(res) {
+                if(res.isSuccess) {
+                    Swal.fire({ icon: 'success', title: 'Updated', timer: 1500, showConfirmButton: false });
+                } else {
+                    Swal.fire('Error', res.message, 'error');
+                }
+            });
+        }
+
+        function reloadKernelCache() {
+            $.post('/SystemParameter/ReloadCache', function(res) {
+                Swal.fire('Kernel Refreshed', 'The system parameters cache has been cleared.', 'success');
+            });
+        }
+    </script>
+}

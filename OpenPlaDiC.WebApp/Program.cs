@@ -46,7 +46,7 @@ builder.Services.Configure<RequestLocalizationOptions>(options =>
     options.RequestCultureProviders.Insert(0, new QueryStringRequestCultureProvider());
 });
 
-// Obtener cadena de conexión
+// Obtener cadena de conexiï¿½n
 string connString = builder.Configuration.GetConnectionString("DefaultConnection");
 
 builder.Services.AddScoped(sp => new AppDbContext(connString));
@@ -56,33 +56,54 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connString));
 
 
-// Registro de la BIZ (Lógica de Negocio)
+// Registro de la BIZ (Lï¿½gica de Negocio)
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IDataService, DataService>();
+builder.Services.AddScoped<IDynamicViewService, DynamicViewService>();
+builder.Services.AddScoped<ISearchService, SearchService>();
+builder.Services.AddScoped<IAccessService, AccessService>();
+builder.Services.AddScoped<IMetadataService, MetadataService>();
+builder.Services.AddScoped<IDynamicDataService, DynamicDataService>();
+builder.Services.AddScoped<ISystemParameterService, SystemParameterService>();
+builder.Services.AddScoped<IEmailService, EmailService>();
+
 
 // Registro del servicio Salesforce
 builder.Services.AddScoped<ISFService, SFService>();
 
+builder.Services.AddScoped<IRazorRenderService, OpenPlaDiC.WebApp.Extensions.RazorRenderService>();
+
+
 
 
 // Registrar tu clase de usuario (sin base de datos)
-builder.Services.AddIdentityCore<ApplicationUser>() // Especificar los tipos explícitamente
+builder.Services.AddIdentityCore<ApplicationUser>() // Especificar los tipos explï¿½citamente
     .AddUserStore<ExternalUserStore>()
     // NO registramos AddRoleStore ni usamos ApplicationRole personalizado
     .AddSignInManager<ExternalSignInManager>()
     .AddDefaultTokenProviders();
 
-// Registrar explícitamente el cookie con el esquema que usa Identity
+// Registrar explï¿½citamente el cookie con el esquema que usa Identity
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme)
     .AddCookie(IdentityConstants.ApplicationScheme, options =>
     {
         options.Cookie.Name = "OpenPlaDiCCookie";
         options.LoginPath = "/Account/Login";
         options.LogoutPath = "/Account/Logout";
-        options.AccessDeniedPath = "/Account/AccessDenied";
-        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(20); 
+        options.SlidingExpiration = true; 
+        options.AccessDeniedPath = "/Error/403";
     });
 
+
+
+builder.Services.AddAuthorization(options =>
+{
+    // Definimos que la polÃ­tica "MasterOnly" requiere que el Claim "IsMaster" sea "True"
+    options.AddPolicy("MasterOnly", policy => 
+        policy.RequireClaim("IsMaster", "True"));
+});
 
 // Add services to the container.
 builder.Services.AddControllersWithViews()
@@ -91,7 +112,7 @@ builder.Services.AddControllersWithViews()
 
 
 
-//// Configurar servicios de localización
+//// Configurar servicios de localizaciï¿½n
 //builder.Services.Configure<RequestLocalizationOptions>(options =>
 //{
 //    var supportedCultures = new[] { "es-MX", "en-US" };
@@ -108,7 +129,7 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
     ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
 });
 
-// Usar el middleware de localización
+// Usar el middleware de localizaciï¿½n
 app.UseRequestLocalization();
 
 app.UseStaticFiles();
@@ -118,9 +139,20 @@ if (!app.Environment.IsDevelopment())
 {
     app.UseHttpsRedirection();
 
-    app.UseExceptionHandler("/Home/Error");
+
+    app.UseExceptionHandler("/Error"); // Errores 500
+    app.UseStatusCodePagesWithReExecute("/Error/{0}"); // Errores 404, 403
+
+
     // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
+}
+else
+{
+    // En desarrollo puedes usar la pÃ¡gina detallada, pero para probar el Kernel
+    // es mejor usar tambiÃ©n el controlador de errores personalizado.
+    app.UseExceptionHandler("/Error");
+    app.UseStatusCodePagesWithReExecute("/Error/{0}");
 }
 
 app.UseHttpsRedirection();

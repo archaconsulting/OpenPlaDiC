@@ -1,0 +1,191 @@
+﻿@model IEnumerable<OpenPlaDiC.Core.Models.Entity>
+@{
+    ViewData["Title"] = "Gestor de Entidades";
+}
+
+<div class="container-fluid px-4 mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800"><i class="bi bi-database-gear text-primary"></i> Estructura de Datos</h2>
+            <p class="text-muted">Administra las tablas dinámicas y su configuración física.</p>
+        </div>
+        <button class="btn btn-primary shadow-sm" data-bs-toggle="modal" data-bs-target="#createEntityModal">
+            <i class="bi bi-plus-lg"></i> Nueva Entidad
+        </div>
+    </div>
+
+    @if (TempData["Message"] != null)
+    {
+        <div class="alert alert-success border-0 shadow-sm mb-4">
+            @TempData["Message"]
+        </div>
+    }
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+        @foreach (var entity in Model)
+        {
+            <div class="col">
+                <div class="card shadow">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between">
+                            <div class="bg-light p-3 rounded-circle">
+                                <i class="bi bi-gear"></i>
+                            </div>
+                            <div class="text-end">
+                                <span>
+                                    @(entity.IsAvailable ? "Activa" : "Inactiva")
+                                </span>
+                            </div>
+                        </div>
+                        <h5 class="card-title mt-3 fw-bold">@entity.Label</h5>
+                        <p class="card-text text-muted small">
+                            Tabla SQL: <code>@entity.Name</code><br />
+                            Folio: <span class="fw-bold">@entity.Prefix-000</span>
+                        </p>
+                    </div>
+                    <div class="card-footer bg-transparent border-0 d-flex justify-content-between pb-3">
+                        <a href="/EntityManager/Details/@entity.Name" class="btn btn-primary">
+                            <i class="bi bi-pencil-square"></i> Diseñar Campos
+                        </a>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-light border" title="Editar" onclick="openEditEntity()">
+                                <i class="bi bi-gear"></i>
+                            </button>
+
+                            @if (!entity.IsSystem)
+                            {
+                            <button class="btn btn-sm btn-light border" onclick="confirmDeleteEntity('@entity.Name')" title="Eliminar" >
+                            
+                                <i class="bi bi-trash"></i>
+                            </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Modal para Editar Entidad -->
+<div class="modal fade" id="editEntityModal" tabindex="-1">
+    <div class="modal-dialog">
+        <form asp-action="UpdateEntity" method="post" class="modal-content">
+            <input type="hidden" id="editEntName" name="Name" />
+            <div class="modal-header bg-dark text-white">
+                <h5 class="modal-title">Configuración de Entidad</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Etiqueta Visual</label>
+                    <input id="editEntLabel" name="Label" class="form-control" required />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Icono (Bootstrap Icon)</label>
+                    <input id="editEntIcon" name="Icon" class="form-control" />
+                </div>
+                <div class="form-check form-switch">
+                    <input id="editEntAvailable" class="form-check-input" type="checkbox" name="IsAvailable" value="true">
+                    <label class="form-check-label">Entidad Disponible para Usuarios</label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="submit" class="btn btn-primary">Guardar Cambios</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Modal para Crear Nueva Entidad -->
+<div class="modal fade" id="createEntityModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form asp-action="CreateEntity" method="post" class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Configurar Nueva Tabla</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Nombre Físico (SQL)</label>
+                    <input name="Name" class="form-control" placeholder="Ej: Product" required 
+                           oninput="this.value = this.value.replace(/[^a-zA-Z]/g, '')" />
+                    <div class="form-text">Solo letras, sin espacios. Este será el nombre de la tabla en DB.</div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Etiqueta Visual (UI)</label>
+                    <input name="Label" class="form-control" placeholder="Ej: Catálogo de Productos" required />
+                </div>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Prefijo de Folio</label>
+                        <input name="Prefix" class="form-control" placeholder="PROD" maxlength="5" required />
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Icono (BI)</label>
+                        <input name="Icon" class="form-control" placeholder="bi-box" />
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label fw-bold">Usa nombre</label>
+                        <select class="form-select" name="UseNameField">
+                            <option value="True" selected>Sí</option>
+                            <option value="False">No</option>
+                        </select>
+
+                    </div>
+
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Crear Entidad Físicamente</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+
+<script>
+    function openEditEntity(name, label, icon, available) {
+        $('#editEntName').val(name);
+        $('#editEntLabel').val(label);
+        $('#editEntIcon').val(icon);
+        $('#editEntAvailable').prop('checked', available === 'True');
+        new bootstrap.Modal(document.getElementById('editEntityModal')).show();
+    }
+
+
+    function confirmDeleteEntity(name) {
+        Swal.fire({
+            title: '¿Eliminar entidad completa?',
+            html: `Estás por borrar la tabla <strong>${name}</strong>.<br><br>` +
+                `<span class="text-danger fw-bold">¡ADVERTENCIA!</span><br>` +
+                `Esta acción eliminará físicamente la tabla en SQL y todos los datos contenidos en ella de forma permanente.`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545', // Rojo peligro
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: '<i class="bi bi-trash"></i> Sí, borrar todo',
+            cancelButtonText: 'Cancelar',
+            reverseButtons: true
+        }).then((result) => {
+            if (result.isConfirmed) {
+                // Mostramos un indicador de carga mientras el Kernel procesa en SQL
+                Swal.fire({
+                    title: 'Procesando...',
+                    text: 'Borrando tabla y metadata del Kernel',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Redirección a la acción de borrado físico
+                window.location.href = `/EntityManager/DropEntity?entityName=${name}`;
+            }
+        });
+    }
+
+
+
+</script>

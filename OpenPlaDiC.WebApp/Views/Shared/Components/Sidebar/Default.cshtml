@@ -1,0 +1,103 @@
+﻿@model IEnumerable<OpenPlaDiC.Core.Models.Entity>
+
+<div class="d-flex flex-column flex-shrink-0 p-3 bg-dark text-white shadow" style="width: 280px; min-height: 100vh;">
+    <!-- Logo y Título -->
+    <a href="/" class="d-flex align-items-center mb-3 mb-md-0 me-md-auto text-white text-decoration-none">
+        <i class="bi bi-cpu-fill fs-3 me-2"></i>
+        <span class="fs-4 fw-bold">OpenPlaDiC</span>
+    </a>
+    <hr>
+
+    <!-- Buscador de Módulos (Sidebar Search) -->
+    <div class="px-2 mb-3">
+        <div class="input-group input-group-sm">
+            <span class="input-group-text bg-secondary border-0 text-white"><i class="bi bi-filter"></i></span>
+            <input type="text" id="sidebarSearch" class="form-control bg-secondary border-0 text-white shadow-none" 
+                   placeholder="Filter modules..." style="font-size: 0.85rem;">
+        </div>
+    </div>
+
+    <ul class="nav nav-pills flex-column mb-auto" id="sidebarMenu">
+        <li class="nav-item">
+            <a asp-controller="Dashboard" asp-action="Index" class="nav-link text-white @(ViewContext.RouteData.Values["controller"]?.ToString() == "Dashboard" ? "active" : "")">
+                <i class="bi bi-speedometer2 me-2"></i> Dashboard
+            </a>
+        </li>
+        
+        <li class="mt-3 mb-1 ms-3 section-header">
+            <small class="text-uppercase text-muted opacity-50 fw-bold" style="font-size: 0.7rem;">Modules</small>
+        </li>
+
+        <!-- Lista de Entidades Dinámicas -->
+        <div id="dynamicEntities">
+            @foreach (var entity in Model)
+            {
+                <li>
+                    
+                        <a>
+                            <span>
+                        @entity.Label</span>
+                    </a>
+                </li>
+            }
+        </div>
+
+        @if (User.HasClaim("IsMaster", "True"))
+        {
+            <li class="mt-3 mb-1 ms-3 section-header">
+                <small class="text-uppercase text-muted opacity-50 fw-bold" style="font-size: 0.7rem;">Kernel</small>
+            </li>
+
+
+            <li class="nav-item">
+                <a asp-controller="Dynamic" asp-action="Index" class="nav-link text-warning">
+                    <i class="bi bi-table me-2"></i> Entidades
+                </a>
+            </li>
+            
+            <li class="nav-item">
+                <a asp-controller="DynamicView" asp-action="Index" class="nav-link text-warning">
+                    <i class="bi bi-code-slash me-2"></i> Vistas
+                </a>
+            </li>
+            <li>
+                <a asp-controller="Security" asp-action="Users" class="nav-link text-warning">
+                    <i class="bi bi-person-circle me-2"></i> Gestión de usuarios
+                </a>
+            </li>
+            <li>
+                <a asp-controller="Security" asp-action="AccessLog" class="nav-link text-warning">
+                    <i class="bi bi-list-check me-2"></i> Auditoría de Accesos
+                </a>
+            </li>
+
+
+        }
+    </ul>
+    <!-- ... Resto del dropdown de usuario ... -->
+</div>
+
+<script>
+    // Lógica de filtrado en tiempo real
+    document.getElementById('sidebarSearch').addEventListener('keyup', function() {
+        let filter = this.value.toLowerCase();
+        let items = document.querySelectorAll('.entity-item');
+        let headers = document.querySelectorAll('.section-header');
+
+        items.forEach(function(item) {
+            let text = item.querySelector('.entity-label').textContent.toLowerCase();
+            if (text.includes(filter)) {
+                item.style.display = "";
+            } else {
+                item.style.display = "none";
+            }
+        });
+
+        // Ocultar cabeceras si no hay resultados (opcional)
+        if (filter.length > 0) {
+            headers.forEach(h => h.style.display = "none");
+        } else {
+            headers.forEach(h => h.style.display = "");
+        }
+    });
+</script>

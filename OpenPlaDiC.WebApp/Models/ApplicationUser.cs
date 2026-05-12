@@ -5,7 +5,8 @@ namespace OpenPlaDiC.WebApp.Models
     public class ApplicationUser : IdentityUser
     {
         // Propiedades adicionales de tu tabla existente
-        public string? NombreCompleto { get; set; }
-        public DateTime FechaRegistro { get; set; }
+        public string? FullName { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public bool IsMaster { get; set;}
     }
 }

@@ -27,7 +27,10 @@ namespace OpenPlaDiC.WebApp.Models
         public override async Task<SignInResult> CheckPasswordSignInAsync(ApplicationUser user, string password, bool lockoutOnFailure)
         {
 
-            var response = await _authService.LoginAsync(user.UserName, password);
+            string ip = "";
+            string ua = "";
+
+            var response = await _authService.LoginAsync(user.UserName, password, ip, ua);
 
             if (response.IsSuccess)
             {

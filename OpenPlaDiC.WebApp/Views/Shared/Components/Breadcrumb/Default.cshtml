@@ -1,0 +1,22 @@
+﻿@model List<OpenPlaDiC.WebApp.Components.BreadcrumbItem>
+
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb bg-light p-2 px-3 rounded shadow-sm border">
+        @foreach (var item in Model)
+        {
+            if (item.IsActive)
+            {
+                <li class="breadcrumb-item active text-dark fw-bold" aria-current="page">@item.Text</li>
+            }
+            else
+            {
+                <li class="breadcrumb-item">
+                    @* Usamos la sobrecarga estándar que acepta object para routeValues *@
+                    <a href="@Url.Action(item.Action, item.Controller, item.RouteValues)">
+                        @item.Text
+                    </a>
+                </li>
+            }
+        }
+    </ol>
+</nav>

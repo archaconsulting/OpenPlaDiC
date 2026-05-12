@@ -68,7 +68,7 @@ namespace OpenPlaDiC.Framework
             else
                 return (sb.ToString().Normalize(NormalizationForm.FormC).Replace("-", "_"));
         }
-        public static string EncodePassword(string originalPassword)
+        public static string EncodePasswordPrev(string originalPassword)
         {
             using (SHA1 sha1 = SHA1.Create())
             {
@@ -77,6 +77,27 @@ namespace OpenPlaDiC.Framework
 
                 return Convert.ToBase64String(hash);
             }
+        }
+
+        public static string EncodePassword(string password, string salt)
+        {
+            // Combinamos password + salt único
+            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+            {
+                var combinedPassword = password + salt;
+                byte[] bytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(combinedPassword));
+                return Convert.ToHexString(bytes).ToLower();
+            }
+        }
+
+        public static string GenerateSalt()
+        {
+            byte[] saltBytes = new byte[32];
+            using (var provider = System.Security.Cryptography.RandomNumberGenerator.Create())
+            {
+                provider.GetBytes(saltBytes);
+            }
+            return Convert.ToBase64String(saltBytes);
         }
         public static string Base64Encode(string plainText)
         {

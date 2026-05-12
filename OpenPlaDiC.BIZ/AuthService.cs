@@ -1,113 +1,166 @@
 ﻿using OpenPlaDiC.DAL;
 using OpenPlaDiC.Framework;
+using OpenPlaDiC.Core.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace OpenPlaDiC.BIZ
 {
     public interface IAuthService
     {
-        Task<Response<GlobalItem>> LoginAsync(string username, string password);
+        Task<Response<GlobalItem>> LoginAsync(string username, string password, string ip, string userAgent);
         Task<Response<GlobalItem>> FindByNameAsync(string username);
         Task<Response<string>> RequestPasswordResetAsync(string email, string newPass = "");
     }
 
-
     public class AuthService : IAuthService
     {
+        private readonly AppDbContext _context;
 
-        private readonly AppDbContext _appDbContext;
-
-        public AuthService(AppDbContext appDbContext)
+        public AuthService(AppDbContext context)
         {
-            _appDbContext = appDbContext;
+            _context = context;
         }
+
+        public async Task<Response<GlobalItem>> Login2Async(string username, string password)
+        {
+            // 1. Buscamos al usuario por su Username (Sin validar password aún)
+            var user = await _context.Users
+                .Include(u => u.UserProfiles)
+                    .ThenInclude(up => up.Profile)
+                .FirstOrDefaultAsync(u => u.Username == username && u.IsActive);
+
+            if (user == null)
+                return new Response<GlobalItem> { IsSuccess = false, Code = 401, Message = "Invalid credentials" };
+
+            // 2. Calculamos el hash usando el Salt guardado en su registro
+            string hashInput = Helper.EncodePassword(password, user.PasswordSalt);
+
+            // 3. Comparamos los hashes
+            if (user.Password == hashInput)
+            {
+                return new Response<GlobalItem>
+                {
+                    IsSuccess = true,
+                    Code = 200,
+                    Data = new GlobalItem
+                    {
+                        Id = user.Id,
+                        Name = user.Name,
+                        Value = user.Username,
+                        Text = user.Email,
+                        Flag = user.IsMaster
+                    }
+                };
+            }
+
+            return new Response<GlobalItem> { IsSuccess = false, Code = 401, Message = "Invalid credentials" };
+        }
+
+
+// Actualizamos la interfaz
+// Task<Response<GlobalItem>> LoginAsync(string username, string password, string ip, string userAgent);
+
+    public async Task<Response<GlobalItem>> LoginAsync(string username, string password, string ip, string userAgent)
+    {
+        var log = new LoginLog { 
+            Username = username, 
+            IPAddress = ip, 
+            UserAgent = userAgent, 
+            LoginDate = DateTime.Now 
+        };
+
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Username == username);
+        string hashPass = Helper.EncodePassword(password, user?.PasswordSalt ?? "");
+
+        if (user != null && user.IsActive && user.Password == hashPass)
+        {
+            log.Status = "SUCCESS";
+            log.UserId = user.Id;
+            log.Message = "Acceso correcto";
+            
+            _context.LoginLogs.Add(log);
+            await _context.SaveChangesAsync();
+
+            return new Response<GlobalItem> { 
+                IsSuccess = true, 
+                Data = 
+                
+                new GlobalItem
+                    {
+                        Id = user.Id,
+                        Name = user.Name,
+                        Value = user.Username,
+                        Text = user.Email,
+                        Flag = user.IsMaster
+                    }
+                                
+            };
+        }
+
+        // Registro de fallo
+        log.Status = "FAILED";
+        log.Message = user == null ? "Usuario inexistente" : (!user.IsActive ? "Usuario inactivo" : "Contraseña incorrecta");
+        
+        _context.LoginLogs.Add(log);
+        await _context.SaveChangesAsync();
+
+        return new Response<GlobalItem> { IsSuccess = false, Message = "Credenciales inválidas", Code = 401 };
+    }
+
+
 
         public async Task<Response<GlobalItem>> FindByNameAsync(string username)
         {
-
-            var response = await _appDbContext.GetQueryAsync($"select * from usuario where upper(uname) = '{username}' ");
-
-
-            if (response.IsSuccess && response.Data != null && response.Data.Rows.Count > 0 )
+            try
             {
-                return new Response<GlobalItem>()
+                var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Username.ToUpper() == username.ToUpper());
+
+                if (user != null)
                 {
-                    IsSuccess = true,
-                    Code = 200,
-                    Data = new GlobalItem()
+                    return new Response<GlobalItem>
                     {
-                        Id = Guid.Parse(response.Data.Rows[0]["Id"].ToString()!),
-                        Name = response.Data.Rows[0]["Nombre"].ToString()!,
-                        Value = response.Data.Rows[0]["Uname"].ToString()!
-                    }
-                };
+                        IsSuccess = true,
+                        Data = new GlobalItem { Id = user.Id, Name = user.Name, Value = user.Username, Flag = user.IsMaster }
+                    };
+                }
+
+                return new Response<GlobalItem> { IsSuccess = false, Message = "User not found" };
             }
-            else
+            catch (System.Exception ex)
             {
-                return new Response<GlobalItem>() { IsSuccess = false, Code = 401, Message = "Usuario no encontrado" };
-            }
-
-
-        }
-
-        public async Task<Response<GlobalItem>> LoginAsync(string username, string password)
-        {
-
-            string hashPass = Framework.Helper.EncodePassword(password+username);
-
-            var response = await _appDbContext.GetQueryAsync($"select * from usuario where uname = '{username}' and passwd = '{hashPass}' ");
                 
-            
-            if (response.IsSuccess && response.Data != null && response.Data.Rows.Count > 0)
-            {
-                return new Response<GlobalItem>()
+                return new Response<GlobalItem>
                 {
-                    IsSuccess = true,
-                    Code = 200,
-                    Data = new GlobalItem()
-                    {
-                        Id = Guid.Parse(response.Data.Rows[0]["Id"].ToString()!),
-                        Name = response.Data.Rows[0]["Nombre"].ToString()!,
-                        Value = response.Data.Rows[0]["Uname"].ToString()!,
-                        Text = response.Data.Rows[0]["Correo"].ToString()!,
-                    }
-                };
+                    IsSuccess = false, IsException = true, Message = ex.Message
+                    
+                };            
             }
-            else
-            {
-                return new Response<GlobalItem>() { IsSuccess = false, Code = 401, Message = "Credenciales inválidas" };
-            }
-
+            
         }
 
         public async Task<Response<string>> RequestPasswordResetAsync(string email, string newPass = "")
         {
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
 
-            await Task.Delay(100);
-
-            var response = await _appDbContext.GetQueryAsync($"select * from usuario where correo = '{email}' ");
-
-
-            if (response.IsSuccess && response.Data != null && response.Data.Rows.Count > 0)
+            if (user != null)
             {
-                string uname = response.Data.Rows[0]["Uname"].ToString()!;
+                newPass = string.IsNullOrEmpty(newPass) ? Helper.CreateRandomPassword(6) : newPass;
+                
+                // Al actualizar, generamos un NUEVO Salt para mayor seguridad
+                user.PasswordSalt = Helper.GenerateSalt();
+                user.Password = Helper.EncodePassword(newPass, user.PasswordSalt);
+                user.UpdatedAt = DateTime.Now;
 
-                newPass = string.IsNullOrEmpty(newPass) ? Helper.CreateRandomPassword(4) : newPass;
-                string hashPass = Helper.EncodePassword(newPass+ uname);
+                await _context.SaveChangesAsync(); // EF detecta los cambios y genera el UPDATE solo
 
-                await _appDbContext.ExecQueryAsync($"update usuario set passwd = '{hashPass}' where Id = '{response.Data.Rows[0]["Id"].ToString()}' ");
-
-
-
-                return new Response<string>() { IsSuccess = true, Data = newPass };
-            }
-            else
-            {
-                return new Response<string>() { Code = 500, Message = "Hubo un error. Intente de nuevo" };
+                return new Response<string> { IsSuccess = true, Data = newPass };
             }
 
-
+            return new Response<string> { IsSuccess = false, Message = "Email not found" };
         }
     }
+
 
 
     }

@@ -4,14 +4,11 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.AspNetCore.Mvc.Razor;
 using Microsoft.AspNetCore.Mvc.Rendering;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
+using OpenPlaDiC.BIZ;
+using OpenPlaDiC.Framework;
 
 namespace OpenPlaDiC.WebApp.Extensions
 {
-
-    public interface IRazorRenderService
-    {
-        Task<string> RenderToStringAsync(string viewName, object model);
-    }
 
     public class RazorRenderService : IRazorRenderService
     {
@@ -29,7 +26,7 @@ namespace OpenPlaDiC.WebApp.Extensions
             _serviceProvider = serviceProvider;
         }
 
-        public async Task<string> RenderToStringAsync(string viewName, object model)
+        public async Task<Response<string>> RenderToStringAsync(string viewName, object model)
         {
             var httpContext = new DefaultHttpContext { RequestServices = _serviceProvider };
             var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
@@ -59,7 +56,7 @@ namespace OpenPlaDiC.WebApp.Extensions
                 );
 
                 await viewResult.View.RenderAsync(viewContext);
-                return sw.ToString();
+                return new Response<string>(){ IsSuccess = true, Data = sw.ToString()};
             }
         }
 

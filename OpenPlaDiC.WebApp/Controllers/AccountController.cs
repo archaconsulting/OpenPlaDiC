@@ -38,6 +38,10 @@ namespace OpenPlaDiC.WebApp.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login(LoginViewModel model, string? returnUrl = null)
         {
+
+            string ip = HttpContext.Connection.RemoteIpAddress?.ToString();
+            string ua = Request.Headers["User-Agent"].ToString();
+            
             returnUrl ??= Url.Content("~/");
 
             if (ModelState.IsValid)
@@ -51,7 +55,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                     return View(model);
                 }
 
-                var respLogin = await _authService.LoginAsync(model.Username, model.Password);
+                var respLogin = await _authService.LoginAsync(model.Username, model.Password, ip, ua);
 
                 if (!respLogin.IsSuccess || respLogin.Data is null)
                 {
@@ -61,10 +65,13 @@ namespace OpenPlaDiC.WebApp.Controllers
 
 
                 var customClaims = new[] {
-                    new Claim("FullName", user.NombreCompleto),
+                    new Claim(ClaimTypes.Name, user.UserName),
+
+                    new Claim("FullName", user.FullName),
                     new Claim("UserId",user.Id),
                     new Claim("PhoneNumber", ""),
-                    new Claim("Email",respLogin.Data.Text)
+                    new Claim("Email",respLogin.Data.Text),
+                    new Claim("IsMaster",user.IsMaster.ToString())
 
                 };
                 var res = _signInManager.SignInWithClaimsAsync(

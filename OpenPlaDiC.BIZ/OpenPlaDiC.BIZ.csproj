@@ -7,12 +7,19 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
+    <PackageReference Include="MailKit" Version="2.9.0" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="../OpenPlaDiC.Core/OpenPlaDiC.Core.csproj" />
     <ProjectReference Include="..\OpenPlaDiC.DAL\OpenPlaDiC.DAL.csproj" />
     <ProjectReference Include="..\OpenPlaDiC.Framework\OpenPlaDiC.Framework.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
 </Project>

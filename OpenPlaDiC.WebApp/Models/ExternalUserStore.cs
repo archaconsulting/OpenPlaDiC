@@ -20,7 +20,7 @@ namespace OpenPlaDiC.WebApp.Models
 
             if (!response.IsSuccess) return null;
 
-            return new ApplicationUser() { Id = response.Data.Id.ToString(), UserName = response.Data.Value, Email = response.Data.Text, NombreCompleto = response.Data.Name, NormalizedEmail = response.Data.Text };
+            return new ApplicationUser() { Id = response.Data.Id.ToString(), UserName = response.Data.Value, Email = response.Data.Text, FullName = response.Data.Name, NormalizedEmail = response.Data.Text, IsMaster = response.Data.Flag };
         }
 
         // Este método es crucial: aquí es donde la API externa valida la contraseña
@@ -35,6 +35,7 @@ namespace OpenPlaDiC.WebApp.Models
         public Task CreateAsync(ApplicationUser user, CancellationToken ct) => Task.CompletedTask;
         public Task<string> GetUserIdAsync(ApplicationUser user, CancellationToken ct) => Task.FromResult(user.Id);
         public Task<string?> GetUserNameAsync(ApplicationUser user, CancellationToken ct) => Task.FromResult(user.UserName);
+        public Task<bool> GetIsMasterAsync(ApplicationUser user, CancellationToken ct) => Task.FromResult(user.IsMaster);
 
         Task IUserStore<ApplicationUser>.SetUserNameAsync(ApplicationUser user, string? userName, CancellationToken cancellationToken)
         {

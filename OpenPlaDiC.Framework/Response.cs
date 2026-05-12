@@ -10,6 +10,16 @@
         public string? Value { get; set; }
         public bool Flag { get; set; }
         public string? ExRef { get; set; }
+
+        public void SetErrorResponse(string message)
+        {
+            
+            IsSuccess = false;
+            IsException = true;
+            Message = message;
+            Code = 500;
+
+        }
     }
 
     public class Response<T> : Response

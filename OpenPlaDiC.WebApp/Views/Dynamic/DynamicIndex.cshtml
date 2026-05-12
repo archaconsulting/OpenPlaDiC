@@ -1,0 +1,162 @@
+﻿@using System.Data
+@using OpenPlaDiC.Core.Models
+@model DataTable
+@{
+    var entity = (Entity)ViewBag.Entity;
+    var access = (AccessControl)ViewBag.Access;
+    ViewData["Title"] = entity.Label;
+}
+
+<div class="container-fluid px-4 mt-4">
+    <!-- Encabezado con Acciones Globales -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="h3 mb-0 text-gray-800">
+                </i>
+                @entity.Label
+            </h2>
+            <p class="text-muted small mb-0">Gestión de registros para la entidad: <code>@entity.Name</code></p>
+        </div>
+        <div class="d-flex gap-2">
+            <!-- Botón de Exportación -->
+            <a>
+            
+                <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+            </a>
+
+            @if (access.CanCreate)
+            {
+                <a>
+                    <i class="bi bi-plus-lg"></i> Nuevo Registro
+                </a>
+            }
+        </div>
+    </div>
+
+    @if (TempData["Message"] != null)
+    {
+        <div class="alert alert-success alert-dismissible fade show shadow-sm" role="alert">
+            <i class="bi bi-check-circle-fill me-2"></i> @TempData["Message"]
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    }
+
+    <!-- Card Principal con la Tabla -->
+    <div class="card shadow-sm border-0">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0" id="dynamicTable">
+                    <thead class="table-light border-bottom">
+                        <tr>
+                            <th class="ps-4">Folio</th>
+                            @* Dibujamos dinámicamente las columnas basadas en el DataTable *@
+                            @foreach (DataColumn col in Model.Columns)
+                            {
+                                // Omitimos columnas técnicas que no queremos mostrar en el Grid
+                                if (col.ColumnName != "Id" && col.ColumnName != "Folio" && 
+                                    col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
+                                {
+                                    <th>@col.ColumnName</th>
+                                }
+                            }
+                            <th>Creado</th>
+                            <th class="text-end pe-4">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (Model.Rows.Count == 0)
+                        {
+                            <tr>
+                                <td colspan="100%" class="text-center py-5 text-muted">
+                                    <i class="bi bi-folder2-open display-4 d-block mb-3"></i>
+                                    No se encontraron registros para @entity.Label.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (DataRow row in Model.Rows)
+                            {
+                                <tr>
+                                    <td class="ps-4">
+                                        <span class="badge bg-light text-primary border fw-bold">@row["Folio"]</span>
+                                    </td>
+                                    
+                                    @foreach (DataColumn col in Model.Columns)
+                                    {
+                                        if (col.ColumnName != "Id" && col.ColumnName != "Folio" && 
+                                            col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
+                                        {
+                                            <td>
+                                                @{
+                                                    var val = row[col.ColumnName];
+                                                    // Formateo simple para booleanos
+                                                    if (val is bool b) {
+                                                        <i class="bi @(b ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
+                                                    } else {
+                                                        @val?.ToString()
+                                                    }
+                                                }
+                                            </td>
+                                        }
+                                    }
+                                    
+                                    <td>
+                                        <small class="text-muted">
+                                            @Convert.ToDateTime(row["CreatedAt"]).ToString("dd/MM/yyyy")
+                                        </small>
+                                    </td>
+
+                                    <td class="text-end pe-4">
+                                        <div class="btn-group shadow-sm">
+                                            <a>
+                                                <i class="bi bi-pencil text-primary"></i>
+                                            </a>
+                                            @if (access.CanDelete)
+                                            {
+                                                <button class="btn btn-danger">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script src="https://jsdelivr.net"></script>
+    <script>
+
+        function confirmDelete(entity, id, folio) {
+            Swal.fire({
+                title: '¿Eliminar registro?',
+                text: `Estás por marcar el folio ${folio} como eliminado.`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Redirección a la acción de borrado lógico
+                    window.location.href = `/Data/${entity}/Delete/${id}`;
+                }
+            });
+        }
+
+
+    </script>
+}
+
+<style>
+    .btn-white { background-color: #fff; }
+    .btn-white:hover { background-color: #f8f9fa; }
+    #dynamicTable th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
