@@ -38,11 +38,11 @@
             @foreach (var entity in Model)
             {
                 <div class="col-xl-3 col-md-4 col-sm-6">
-                    <a>
+                    <a class="link-offset-2 link-offset-3-hover link-underline link-underline-opacity-0 link-underline-opacity-10-hover" href="/Data/@entity.Name">
                         <div class="card h-100 border-0 shadow-sm dashboard-card">
                             <div class="card-body text-center p-4">
                                 <div class="icon-circle bg-primary bg-opacity-10 text-primary mb-3 mx-auto">
-                                    
+                                    <i class="bi @entity.Icon fs-2"></i>
                                 </div>
                                 <h5 class="card-title text-dark fw-bold">@entity.Label</h5>
                                 <p class="card-text text-muted small">Manage all @entity.Label records</p>

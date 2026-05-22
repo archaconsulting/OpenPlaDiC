@@ -9,7 +9,7 @@ public interface IMetadataService
 {
     Task<Entity> GetEntityByNameAsync(string entityName);
     Task<Entity> GetEntityWithPropertiesAsync(string entityName);
-    Task<IEnumerable<Entity>> GetAllEntitiesAsync();
+    Task<IEnumerable<Entity>> GetAllEntitiesAsync(bool includeAll = false);
 }
 
 public class MetadataService : IMetadataService
@@ -38,9 +38,9 @@ public class MetadataService : IMetadataService
                 .FirstOrDefaultAsync(e => e.Name == entityName); // Quita el filtro de IsAvailable temporalmente para probar
         }
 
-        public async Task<IEnumerable<Entity>> GetAllEntitiesAsync()
+        public async Task<IEnumerable<Entity>> GetAllEntitiesAsync(bool includeAll = false)
         {
-            var list = _context.Entities.Where(e => e.IsAvailable);//.OrderBy(e => e.Label);
+            var list = includeAll ? _context.Entities.AsQueryable() : _context.Entities.Where(e => e.IsAvailable);//.OrderBy(e => e.Label);
 
             if(list.AsEnumerable != null )
             {

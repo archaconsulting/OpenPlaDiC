@@ -1,7 +1,8 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using OpenPlaDiC.Core.Models;
 using OpenPlaDiC.DAL;
-
+using System.Security.Claims;
 namespace OpenPlaDiC.BIZ
 {
     public interface IAccessService
@@ -16,21 +17,25 @@ namespace OpenPlaDiC.BIZ
     public class AccessService : IAccessService
     {
         private readonly AppDbContext _context;
+        private readonly IHttpContextAccessor _httpContextAccessor;
 
-        public AccessService(AppDbContext context)
+        public AccessService(AppDbContext context, IHttpContextAccessor httpContextAccessor)
         {
             _context = context;
+            _httpContextAccessor = httpContextAccessor;
         }
 
         public async Task<AccessControl> GetViewAccessAsync(Guid userId, Guid viewId)
         {
-            // 1. Intentar obtener permiso directo del usuario
+            // REGLA DE ORO: Si es Master, tiene acceso total inmediato
+            if (IsCurrentUserMaster()) return GetMasterAccessControl();
+
+            // Lógica anterior de búsqueda de permisos...
             var userAccess = await _context.AccessControls
-                .FirstAsync(a => a.UserId == userId && a.DynamicViewId == viewId);
+                .FirstOrDefaultAsync(a => a.UserId == userId && a.DynamicViewId == viewId);
 
             if (userAccess != null) return userAccess;
 
-            // 2. Si no hay directo, buscar en sus perfiles
             var profileIds = await _context.UserProfiles
                 .Where(up => up.UserId == userId)
                 .Select(up => up.ProfileId)
@@ -40,12 +45,15 @@ namespace OpenPlaDiC.BIZ
                 .Where(a => profileIds.Contains(a.ProfileId ?? Guid.Empty) && a.DynamicViewId == viewId)
                 .ToListAsync();
 
-            // Consolidar: Tomamos el máximo nivel de acceso y los permisos más altos
             return ConsolidateAccess(profileAccessList);
         }
 
         public async Task<AccessControl> GetEntityAccessAsync(Guid userId, Guid entityId)
         {
+            // REGLA DE ORO: Si es Master, tiene acceso total inmediato
+            if (IsCurrentUserMaster()) return GetMasterAccessControl();
+
+            // Lógica anterior de búsqueda de permisos...
             var userAccess = await _context.AccessControls
                 .FirstOrDefaultAsync(a => a.UserId == userId && a.EntityId == entityId);
 
@@ -61,6 +69,27 @@ namespace OpenPlaDiC.BIZ
                 .ToListAsync();
 
             return ConsolidateAccess(profileAccessList);
+        }
+
+        // Helper para validar el Claim de Master del usuario logueado
+        private bool IsCurrentUserMaster()
+        {
+            var user = _httpContextAccessor.HttpContext?.User;
+            return user?.HasClaim("IsMaster", "True") ?? false;
+        }
+
+        // Helper para generar un objeto de acceso total (Nivel 3 / CRUD Completo)
+        private AccessControl GetMasterAccessControl()
+        {
+            return new AccessControl
+            {
+                AccessLevel = 3, // Control total de lectura/escritura/configuración
+                CanRead = true,
+                CanCreate = true,
+                CanUpdate = true,
+                CanDelete = true,
+                CanExecute = true
+            };
         }
 
         private AccessControl ConsolidateAccess(List<AccessControl> accessList)

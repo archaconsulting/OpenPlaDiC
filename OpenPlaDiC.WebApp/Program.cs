@@ -122,6 +122,9 @@ builder.Services.AddControllersWithViews()
 //});
 
 
+builder.Services.AddHttpContextAccessor();
+
+
 var app = builder.Build();
 
 app.UseForwardedHeaders(new ForwardedHeadersOptions

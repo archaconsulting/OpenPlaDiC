@@ -12,7 +12,6 @@ namespace OpenPlaDiC.WebApp.Controllers
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<AccountController> _logger;
         private readonly IAuthService _authService;
-
         public AccountController(
             SignInManager<ApplicationUser> signInManager,
             ILogger<AccountController> logger,
@@ -118,7 +117,7 @@ namespace OpenPlaDiC.WebApp.Controllers
             var response = await _authService.RequestPasswordResetAsync(email);
             if (response.IsSuccess)
             {
-                ViewBag.Message = "Si el correo existe, recibirás un enlace de recuperación.";
+                ViewBag.Message = "Si el correo existe, recibirás un enlace de recuperación. "+ response.Data;
                 return View("ForgotPasswordConfirmation");
             }
             return View();

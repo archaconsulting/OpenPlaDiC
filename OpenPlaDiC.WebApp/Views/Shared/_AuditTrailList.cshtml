@@ -1,0 +1,50 @@
+﻿@using System.Data
+@using System.Text.Json
+@model DataTable
+
+<div class="accordion shadow-sm" id="accordionAudit">
+    @foreach (DataRow row in Model.Rows)
+    {
+        var oldValues = JsonSerializer.Deserialize<Dictionary<string, object>>(row["OldValues"].ToString());
+        var newValues = JsonSerializer.Deserialize<Dictionary<string, object>>(row["NewValues"].ToString());
+        var propLabels = (Dictionary<string, string>)ViewBag.PropertyLabels;
+        var rowId = "audit-" + row["Id"].ToString().Substring(0, 8);
+
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#@rowId">
+                    <div class="d-flex justify-content-between w-100 me-3">
+                        <span>
+                            <i class="bi bi-person-badge me-2"></i><strong>@row["UserName"]</strong> 
+                            <span class="badge bg-@(row["Action"].ToString() == "INSERT" ? "success" : "primary") ms-2">@row["Action"]</span>
+                        </span>
+                        <small class="text-muted">@Convert.ToDateTime(row["ChangeDate"]).ToString("dd/MM/yyyy HH:mm")</small>
+                    </div>
+                </button>
+            </h2>
+            <div id="@rowId" class="accordion-collapse collapse" data-bs-parent="#accordionAudit">
+                <div class="accordion-body p-0">
+                    <table class="table table-sm table-striped mb-0" style="font-size: 0.85rem;">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-3">Campo</th>
+                                <th>Valor Anterior</th>
+                                <th>Valor Nuevo</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var key in newValues.Keys)
+                            {
+                                <tr>
+                                    <td class="ps-3 fw-bold">@(propLabels.ContainsKey(key) ? propLabels[key] : key)</td>
+                                    <td class="text-danger"><s>@oldValues[key]</s></td>
+                                    <td class="text-success fw-bold">@newValues[key]</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    }
+</div>

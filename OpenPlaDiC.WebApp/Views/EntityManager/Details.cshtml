@@ -18,6 +18,11 @@
                         <i class="bi bi-eye"></i> Vista Previa
                     </button>
 
+
+                    <a class="btn btn-outline-secondary w-100 mt-2" href="/EntityManager">
+                        <i class="bi bi-database-gear"></i> Regresar
+                    </a>
+
                 </div>
             </div>
         </div>
@@ -199,7 +204,8 @@
     <div class="modal-dialog">
         <form asp-controller="EntityManager" asp-action="UpdatePropertyMetadata" method="post" class="modal-content">
             <input type="hidden" id="editPropId" name="Id" />
-            
+            <!-- Pasamos el nombre de la entidad para que el controlador sepa dónde crear la columna -->
+            <input type="hidden" name="entityName" value="@Model.Name" />            
             
             <div class="modal-header bg-primary text-white">
                 <h5 class="modal-title"><i class="bi bi-pencil-square"></i> Editar Configuración del Campo</h5>

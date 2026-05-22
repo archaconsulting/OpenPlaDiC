@@ -248,93 +248,76 @@ CREATE INDEX IX_Record_SearchContent ON [Record] (Folio) INCLUDE (SearchContent)
 GO
 
 CREATE or ALTER PROCEDURE sp_Core_CreateEntity
-    @Name NVARCHAR(120),
-    @Label NVARCHAR(120),
-    @Prefix NVARCHAR(10),
-    @Icon NVARCHAR(120) = 'bi-table',
+    @Name NVARCHAR(128),
+    @Label NVARCHAR(128),
+    @Prefix NVARCHAR(5),
+    @Icon NVARCHAR(50),
     @CreatedById UNIQUEIDENTIFIER,
     @UseNameField BIT = 1,
     @NameLabel NVARCHAR(120) = 'Nombre'
-
 AS
 BEGIN
     SET NOCOUNT ON;
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        DECLARE @EntityId UNIQUEIDENTIFIER
+        -- 1. Validar si ya existe en la metadata
+        IF EXISTS (SELECT 1 FROM Entity WHERE Name = @Name)
+        BEGIN
+            THROW 50001, 'La entidad ya existe en el Kernel.', 1;
+        END
 
-        SET @EntityId = NEWID();
+        -- 2. Insertar en la tabla maestra de Metadata
+        DECLARE @EntityId UNIQUEIDENTIFIER = NEWID();
+        
+        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, IsAvailable, IsSystem, CreatedAt, CreatedById)
+        VALUES (@EntityId, @Name, @Label, @Prefix, @Icon, 1, 0, GETDATE(), @CreatedById);
 
-        -- 1. Registro de Metadata
-        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, CreatedById)
-        VALUES (@EntityId, @Name, @Label, UPPER(@Prefix), @Icon, @CreatedById);
-
-        -- 2. Creación de la Tabla Física
-        DECLARE @sql NVARCHAR(MAX) = N'
-        CREATE TABLE ' + QUOTENAME(@Name) + ' (
+        -- 3. Crear la TABLA FÍSICA con sus columnas base del Kernel
+        DECLARE @Sql NVARCHAR(MAX);
+        SET @Sql = N'CREATE TABLE ' + QUOTENAME(@Name) + ' (
             Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
-            Name NVARCHAR(200) NOT NULL,
+            Name NVARCHAR(200) NULL,
             Number INT IDENTITY(1,1) NOT NULL,
             Folio AS ''' + UPPER(@Prefix) + '-'' + RIGHT(''0000000000'' + CONVERT(NVARCHAR(10), Number), 10) PERSISTED,
             IsAvailable BIT NOT NULL DEFAULT 1,
+            IsDeleted BIT NOT NULL DEFAULT 0,
             CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-            UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
-            CreatedById UNIQUEIDENTIFIER NOT NULL DEFAULT ''' + CAST(@CreatedById AS NVARCHAR(36)) + ''' REFERENCES [User](Id)
-        )';
-        EXEC sp_executesql @sql;
+            CreatedById UNIQUEIDENTIFIER NOT NULL,
+            UpdatedAt DATETIME2 NULL,
+            UpdatedById UNIQUEIDENTIFIER NULL
+        );';
+        
+        EXEC sp_executesql @Sql;
 
+        -- 4. Opcional: Insertar el campo 'Name' en EntityProperty si la tabla usará este campo estándar
+        -- INSERT INTO EntityProperty ... (dependiendo de tu lógica de UseNameField)
 
+        -- Dentro de sp_Core_CreateEntity, después de crear la tabla física:
         IF @UseNameField = 1
         BEGIN
             INSERT INTO EntityProperty (Id, EntityId, Name, Label, DataTypeId, GridRow, GridColumn, IsRequired, IsVisible, IsEditable, Sequence, CreatedById)
             VALUES (NEWID(), @EntityId, 'Name', @NameLabel, 1, 1, 1, 1, 1, 1, 0, @CreatedById);
         END
 
-        -- 3. Trigger para Sincronización Automática con la tabla Record
-        DECLARE @triggerSql NVARCHAR(MAX) = N'
-        CREATE TRIGGER ' + QUOTENAME('trg_' + @Name + '_AfterInsert') + ' ON ' + QUOTENAME(@Name) + ' AFTER INSERT AS 
-        BEGIN 
-            INSERT INTO [Record] (Id, EntityId, Folio, CreatedById)
-            SELECT i.Id, (SELECT Id FROM Entity WHERE Name = ''' + @Name + '''), i.Folio, i.CreatedById 
-
-            FROM inserted i 
-        END';
-        EXEC sp_executesql @triggerSql;
-
-
-        set @triggerSql  = N'
-        CREATE TRIGGER ' + QUOTENAME('trg_' + @Name + '_AfterUpdate') + ' ON ' + QUOTENAME(@Name) + ' AFTER UPDATE AS 
-        BEGIN 
-
-
-            SET NOCOUNT ON;
-            -- Si el nombre cambió, actualizamos el índice de búsqueda global
-            IF UPDATE(Name)
-            BEGIN
-                UPDATE r
-                SET r.SearchContent = i.Name
-                FROM [Record] r
-                INNER JOIN inserted i ON r.Id = i.Id;
-            END
-
-        END';
-        EXEC sp_executesql @triggerSql;
-
-
-
 
         COMMIT TRANSACTION;
+        SELECT 1 AS IsSuccess, 'Entidad creada correctamente en el Kernel' AS Message;
+
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-        THROW;
+        DECLARE @ErrMsg NVARCHAR(4000) = ERROR_MESSAGE();
+        SELECT 0 AS IsSuccess, @ErrMsg AS Message;
     END CATCH
 END;
 GO
 
 ALTER TABLE EntityProperty add UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE();
 ALTER TABLE EntityProperty add UpdatedById UNIQUEIDENTIFIER;
+
+ALTER TABLE Entity add UpdatedById UNIQUEIDENTIFIER;
+
 
 GO
 
@@ -358,6 +341,20 @@ BEGIN
             UpdatedAt = GETDATE(),
             UpdatedById = @UpdatedById
         WHERE Id = @PropertyId;
+
+        DECLARE @PropertyName varchar(120)
+
+        DECLARE @EntityId UNIQUEIDENTIFIER
+
+
+        SELECT @PropertyName = UPPER(Name), @EntityId = EntityId FROM EntityProperty WHERE Id = @PropertyId; 
+
+        IF(@PropertyName = 'NAME')
+        BEGIN
+
+            UPDATE Entity SET NameLabel = @Label WHERE Id = @EntityId
+
+        END
 
         SELECT 1 AS IsSuccess, 'Metadata actualizada correctamente' AS Message;
     END TRY

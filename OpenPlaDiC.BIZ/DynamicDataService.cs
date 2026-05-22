@@ -21,7 +21,8 @@ public interface IDynamicDataService
     Task<Response<byte[]>> ExportToExcelAsync(string entityName);
     Task<Response<bool>> DeleteLogicalAsync(string entityName, Guid id, Guid userId);
 
-
+    Task<Response<Dictionary<string, object>>> CreateEmptyDictionaryAsync(Entity entity, IQueryCollection query);
+    
 
 
 }
@@ -150,39 +151,63 @@ public class DynamicDataService : IDynamicDataService
         return response;
     }
 
-
-    public Response<Dictionary<string, object>> CreateEmptyDictionary(Entity entity)
-    {
-        var dict = new Dictionary<string, object>
-        {
-            ["Id"] = Guid.Empty,
-            ["Folio"] = "NEW",
-            ["Name"] = ""
-        };
-
-        foreach (var prop in entity.Properties)
-        {
-            dict[prop.Name] = null;
-        }
-
-        return new Response<Dictionary<string, object>> { IsSuccess = true, Data = dict };
-    }
-
     private Dictionary<string, object> ConvertFormToDictionary(IFormCollection form, Entity entity)
     {
         var dict = new Dictionary<string, object>();
 
-        // Solo procesamos campos que existen en la metadata o campos base
-        foreach (var prop in entity.Properties)
-        {
-            if (form.ContainsKey(prop.Name))
-            {
-                dict[prop.Name] = form[prop.Name].ToString();
-            }
-        }
 
         if (entity.UseNameField && form.ContainsKey("Name"))
             dict["Name"] = form["Name"].ToString();
+
+
+        // Recorrer las propiedades y validar tipos básicos antes de compilar el SQL
+        foreach (var prop in entity.Properties)
+        {
+            if (!form.ContainsKey(prop.Name)) continue;
+
+            string rawValue = form[prop.Name].ToString();
+
+            // Si el campo está vacío y no es requerido, lo mandamos como NULL
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                dict[prop.Name] = DBNull.Value;
+                continue;
+            }
+
+            // Conversión según DataTypeId (Enum PropertyDataType)
+            switch (prop.DataTypeId)
+            {
+                case 3: // Supongamos 3 = Boolean/Switch
+                    dict[prop.Name] = rawValue == "true" || rawValue == "on" ? 1 : 0;
+                    break;
+                    
+                case 4: // Supongamos 4 = DateTime
+                    if (DateTime.TryParse(rawValue, out DateTime dt))
+                        dict[prop.Name] = dt.ToString("yyyy-MM-dd HH:mm:ss");
+                    else
+                        dict[prop.Name] = DBNull.Value;
+                    break;
+
+
+                case 10: // RelatedEntity
+                    if (form.ContainsKey(prop.Name) && !string.IsNullOrWhiteSpace(form[prop.Name].ToString()))
+                    {
+                        if (Guid.TryParse(form[prop.Name].ToString(), out Guid gId))
+                            dict[prop.Name] = gId.ToString();
+                        else
+                            dict[prop.Name] = DBNull.Value;
+                    }
+                    else
+                    {
+                        dict[prop.Name] = DBNull.Value; // Si el usuario limpia el campo, se guarda NULL en SQL
+                    }
+                    break;
+
+                default: // Textos o Strings estándar
+                    dict[prop.Name] = rawValue.Trim();
+                    break;
+            }
+        }            
 
         return dict;
     }
@@ -223,7 +248,7 @@ public class DynamicDataService : IDynamicDataService
             string sql = "";
             var parameters = new List<GlobalItem>();
             var fieldsToSave = entity.Properties.Where(p => p.IsEditable).Select(p => p.Name).ToList();
-            if (entity.UseNameField) fieldsToSave.Add("Name");
+            //if (entity.UseNameField) fieldsToSave.Add("Name");
 
             if (isUpdate)
             {
@@ -413,6 +438,99 @@ public class DynamicDataService : IDynamicDataService
         }
         return response;
     }
+
+    public Response<Dictionary<string, object>> CreateEmptyDictionary(Entity entity)
+    {
+        var dict = new Dictionary<string, object>
+        {
+            // Campos estructurales requeridos por el Kernel
+            ["Id"] = Guid.Empty,
+            ["Folio"] = "NUEVO",
+            ["CreatedAt"] = DateTime.Now
+        };
+
+        // Agregar el campo Name si la entidad lo utiliza
+        if (entity.UseNameField)
+        {
+            dict["Name"] = string.Empty;
+        }
+
+        // Inicializar cada propiedad configurada en nulo para el formulario
+        foreach (var prop in entity.Properties)
+        {
+            dict[prop.Name] = null;
+            
+            // Si es una relación, inicializamos también su campo de texto descriptivo
+            if (prop.DataTypeId == 10)
+            {
+                dict[prop.Name + "_Text"] = string.Empty;
+            }
+        }
+
+        return new Response<Dictionary<string, object>> { IsSuccess = true, Data = dict };
+    }
+
+
+
+    public async Task<Response<Dictionary<string, object>>> CreateEmptyDictionaryAsync(Entity entity, IQueryCollection query)
+    {
+        var response = new Response<Dictionary<string, object>>();
+        try
+        {
+            var dict = new Dictionary<string, object>
+            {
+                ["Id"] = Guid.Empty,
+                ["Folio"] = "NUEVO",
+                ["CreatedAt"] = DateTime.Now
+            };
+
+            if (entity.UseNameField) dict["Name"] = string.Empty;
+
+            // 1. Inicializar todas las propiedades configuradas de la entidad en nulo
+            foreach (var prop in entity.Properties)
+            {
+                dict[prop.Name] = null;
+                if (prop.DataTypeId == 10) dict[prop.Name + "_Text"] = string.Empty;
+            }
+
+            // 2. Evaluar si la Query String contiene parámetros que coincidan con las propiedades de la entidad
+            foreach (var param in query)
+            {
+                // Buscamos si la tabla tiene una propiedad con el nombre que viene en la URL
+                var matchingProp = entity.Properties.FirstOrDefault(p => p.Name.Equals(param.Key, StringComparison.OrdinalIgnoreCase));
+                
+                if (matchingProp != null && Guid.TryParse(param.Value, out Guid parentGuid))
+                {
+                    // Asignamos el ID del padre al campo de la tabla física
+                    dict[matchingProp.Name] = parentGuid;
+
+                    // 3. Inteligencia de Contexto: Si es una relación (Tipo 10), traemos su texto amigable de inmediato
+                    if (matchingProp.DataTypeId == 10)
+                    {
+                        string lookupSql = $"SELECT Name FROM {matchingProp.SourceDefinition} WHERE Id = @p0";
+                        var lookupRes = await _context.GetQueryAsync(lookupSql, new Framework.GlobalItem { Name = "@p0", Value = parentGuid.ToString() });
+
+                        if (lookupRes.IsSuccess && lookupRes.Data.Rows.Count > 0)
+                        {
+                            // Llenamos el valor descriptivo para el input de la interfaz
+                            dict[matchingProp.Name + "_Text"] = lookupRes.Data.Rows[0]["Name"].ToString();
+                        }
+                    }
+                }
+            }
+
+            response.Data = dict;
+            response.IsSuccess = true;
+        }
+        catch (Exception ex)
+        {
+            response.IsSuccess = false;
+            response.Message = "Error al inicializar contexto de registro: " + ex.Message;
+        }
+        return response;
+    }
+
+
 
 
 }

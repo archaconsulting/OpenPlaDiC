@@ -40,6 +40,7 @@
     <Folder Include="Views/Search/" />
     <Folder Include="Views/Security/" />
     <Folder Include="Views/Shared/Components/Breadcrumb/" />
+    <Folder Include="Views/Shared/Components/RelatedEntities/" />
     <Folder Include="Views/Shared/Components/Sidebar/" />
     <Folder Include="Views/SystemParameter/" />
   </ItemGroup>	

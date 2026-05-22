@@ -4,6 +4,9 @@ using OpenPlaDiC.Core.Models;
 using System.Security.Claims;
 using System.Data;
 using OpenPlaDiC.WebApp.Models;
+using OpenPlaDiC.DAL;
+using OpenPlaDiC.Framework;
+
 
 namespace OpenPlaDiC.WebApp.Controllers
 {
@@ -14,14 +17,18 @@ namespace OpenPlaDiC.WebApp.Controllers
         private readonly IDynamicDataService _dataService;
         private readonly IAccessService _accessService;
 
+        private readonly AppDbContext _context;
+
         public DynamicController(
             IMetadataService metadataService, 
             IDynamicDataService dataService, 
-            IAccessService accessService)
+            IAccessService accessService,
+            AppDbContext appDbContext)
         {
             _metadataService = metadataService;
             _dataService = dataService;
             _accessService = accessService;
+            _context = appDbContext;
         }
 
         // Listado Genérico
@@ -56,18 +63,46 @@ namespace OpenPlaDiC.WebApp.Controllers
             if (id.HasValue && !access.CanRead) return Forbid();
             if (!id.HasValue && !access.CanCreate) return Forbid();
 
-            var recordDataResponse = id.HasValue 
-                ? await _dataService.GetByIdAsync(entityName, id.Value) 
-                : _dataService.CreateEmptyDictionary(entity);
+
+            Dictionary<string, object> recordData;
+
+
+            if (id.HasValue)
+            {
+                var recordDataResponse = await _dataService.GetByIdAsync(entityName, id.Value);
+                recordData = recordDataResponse.Data;
+            }
+            else
+            {
+                // Pasamos la colección de la Query String (ej: ?ClienteId=GUID) al creador de diccionarios
+                var emptyDictResponse = await _dataService.CreateEmptyDictionaryAsync(entity, Request.Query);
+                recordData = emptyDictResponse.Data;
+            }
+
+
+
+            // var recordDataResponse = id.HasValue 
+            //     ? await _dataService.GetByIdAsync(entityName, id.Value) 
+            //     : _dataService.CreateEmptyDictionary(entity);
+
+            // var viewModel = new DynamicFormViewModel
+            // {
+            //     EntityMetadata = entity,
+            //     RecordData = recordDataResponse.Data,
+            //     AccessLevel = access.AccessLevel
+            // };
+
 
             var viewModel = new DynamicFormViewModel
             {
                 EntityMetadata = entity,
-                RecordData = recordDataResponse.Data,
+                RecordData = recordData,
                 AccessLevel = access.AccessLevel
             };
 
             return View("DynamicForm", viewModel);
+
+
         }
 
         // Acción de Guardado (Procesa el Formulario y ejecuta Triggers)
@@ -91,7 +126,11 @@ namespace OpenPlaDiC.WebApp.Controllers
 
             if (response.IsSuccess)
             {
-                TempData["Message"] = "Record saved successfully.";
+
+                TempData["Message"] = isUpdate 
+                    ? "Registro actualizado con éxito." 
+                    : "Nuevo registro creado correctamente.";
+
                 return RedirectToAction(nameof(Index), new { entityName });
             }
 
@@ -154,6 +193,29 @@ namespace OpenPlaDiC.WebApp.Controllers
 
             return RedirectToAction(nameof(Index), new { entityName });
         }
+
+
+        // El {entityName} ya viene implícito por la ruta del controlador principal
+        [HttpGet("AuditTrail/{id}")] 
+        public async Task<IActionResult> GetAuditTrail(string entityName, Guid id)
+        {
+            // 1. Obtener los logs de la tabla AuditLog
+            string sql = "SELECT a.*, u.Name as UserName FROM AuditLog a " +
+                        "INNER JOIN [User] u ON a.UserId = u.Id " +
+                        "WHERE a.EntityName = @e AND a.RecordId = @r ORDER BY a.ChangeDate DESC";
+            
+            var response = await _context.GetQueryAsync(sql, 
+                new GlobalItem("e", entityName), 
+                new GlobalItem("r", id.ToString()));
+
+            // 2. Obtener etiquetas de las propiedades para "traducir" el JSON
+            var entity = await _metadataService.GetEntityWithPropertiesAsync(entityName);
+            ViewBag.PropertyLabels = entity.Properties.ToDictionary(p => p.Name, p => p.Label);
+
+            return PartialView("_AuditTrailList", response.Data);
+        }
+
+
 
 
 

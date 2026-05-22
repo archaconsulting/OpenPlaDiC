@@ -26,7 +26,7 @@
 
             @if (access.CanCreate)
             {
-                <a>
+                <a class="btn btn-primary" href="/Data/@entity.Name/Edit">
                     <i class="bi bi-plus-lg"></i> Nuevo Registro
                 </a>
             }
@@ -54,12 +54,31 @@
                             {
                                 // Omitimos columnas técnicas que no queremos mostrar en el Grid
                                 if (col.ColumnName != "Id" && col.ColumnName != "Folio" && 
+                                
+                                        col.ColumnName != "Number" &&
+                                        col.ColumnName != "IsAvailable" &&
+                                        col.ColumnName != "CreatedAt" &&
+                                        col.ColumnName != "UpdatedAt" &&
+                                        col.ColumnName != "UpdatedById" &&                                
+
+
                                     col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
                                 {
+                                    @if(col.ColumnName.ToUpper().Equals("NAME"))
+                                    {
+
+                                    <th>@entity.NameLabel</th>
+
+
+                                    }
+                                    else
+                                    {
+
                                     <th>@col.ColumnName</th>
+                                        
+                                    }
                                 }
                             }
-                            <th>Creado</th>
                             <th class="text-end pe-4">Acciones</th>
                         </tr>
                     </thead>
@@ -84,7 +103,14 @@
                                     
                                     @foreach (DataColumn col in Model.Columns)
                                     {
-                                        if (col.ColumnName != "Id" && col.ColumnName != "Folio" && 
+                                        if (col.ColumnName != "Id" && col.ColumnName != "Folio" &&  
+                                        
+                                        col.ColumnName != "Number" &&
+                                        col.ColumnName != "IsAvailable" &&
+                                        col.ColumnName != "CreatedAt" &&
+                                        col.ColumnName != "UpdatedAt" &&
+                                        col.ColumnName != "UpdatedById" &&
+                                        
                                             col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
                                         {
                                             <td>
@@ -101,16 +127,12 @@
                                         }
                                     }
                                     
-                                    <td>
-                                        <small class="text-muted">
-                                            @Convert.ToDateTime(row["CreatedAt"]).ToString("dd/MM/yyyy")
-                                        </small>
-                                    </td>
+
 
                                     <td class="text-end pe-4">
                                         <div class="btn-group shadow-sm">
-                                            <a>
-                                                <i class="bi bi-pencil text-primary"></i>
+                                            <a class="btn btn-primary" href="/Data/@entity.Name/Edit/@row["Id"]">
+                                                <i class="bi bi-pencil"></i>
                                             </a>
                                             @if (access.CanDelete)
                                             {
@@ -131,7 +153,6 @@
 </div>
 
 @section Scripts {
-    <script src="https://jsdelivr.net"></script>
     <script>
 
         function confirmDelete(entity, id, folio) {

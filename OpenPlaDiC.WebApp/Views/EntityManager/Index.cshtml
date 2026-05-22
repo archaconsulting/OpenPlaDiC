@@ -29,10 +29,10 @@
                     <div class="card-body">
                         <div class="d-flex justify-content-between">
                             <div class="bg-light p-3 rounded-circle">
-                                <i class="bi bi-gear"></i>
+                                <i class="bi @entity.Icon"></i>
                             </div>
                             <div class="text-end">
-                                <span>
+                                <span class="badge rounded-pill @(entity.IsAvailable ? "bg-success":"bg-danger")">
                                     @(entity.IsAvailable ? "Activa" : "Inactiva")
                                 </span>
                             </div>
@@ -48,7 +48,7 @@
                             <i class="bi bi-pencil-square"></i> Diseñar Campos
                         </a>
                         <div class="btn-group">
-                            <button class="btn btn-sm btn-light border" title="Editar" onclick="openEditEntity()">
+                            <button class="btn btn-sm btn-light border" title="Editar" onclick="openEditEntity('@entity.Name','@entity.Label','@entity.Icon','@entity.IsAvailable')">
                                 <i class="bi bi-gear"></i>
                             </button>
 

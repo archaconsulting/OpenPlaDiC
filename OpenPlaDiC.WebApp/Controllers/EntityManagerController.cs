@@ -26,7 +26,7 @@ namespace OpenPlaDiC.WebApp.Controllers
 
         public async Task<IActionResult> Index()
         {
-            var entities = await _metadataService.GetAllEntitiesAsync();
+            var entities = await _metadataService.GetAllEntitiesAsync(true);
             return View(entities);
         }
 
@@ -86,6 +86,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                 TempData["Error"] = response.Message;
 
             return RedirectToAction("Details", new { entityName = entityName });
+            //return RedirectToAction($"Details/{entityName}" );
         }
 
 
@@ -109,6 +110,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                 new GlobalItem("GridColumn", prop.GridColumn.ToString()),
                 new GlobalItem("DataTypeId", prop.DataTypeId.ToString()),
                 new GlobalItem("IsRequired", prop.IsRequired ? "1" : "0"),
+                new GlobalItem("RelatedEntityName", prop.SourceDefinition),                
                 new GlobalItem("CreatedById", userId.ToString())
             );
 
@@ -196,7 +198,7 @@ namespace OpenPlaDiC.WebApp.Controllers
 
             // Actualizamos campos de la metadata (Label, Icon, IsAvailable)
             // No permitimos cambiar el Name (SQL) aquí para evitar romper la integridad física
-            await _context.ExecQueryAsync(
+            var respUpdate = await _context.ExecQueryAsync(
                 "UPDATE Entity SET Label = @l, Icon = @i, IsAvailable = @a, UpdatedAt = GETDATE(), UpdatedById = @u WHERE Name = @n",
                 new GlobalItem("l", model.Label),
                 new GlobalItem("i", model.Icon ?? "bi-table"),

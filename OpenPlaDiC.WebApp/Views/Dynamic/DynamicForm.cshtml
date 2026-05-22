@@ -3,140 +3,259 @@
 
 @model OpenPlaDiC.WebApp.Models.DynamicFormViewModel
 @{
-    // Detectamos si es una petición AJAX (Partial) o normal
+
+    Layout = "_Layout";
+    
+    // 1. Extracción e inicialización 100% segura del ID
+    string recordId = Model.RecordData.ContainsKey("Id") && Model.RecordData["Id"] != null 
+                             ? Model.RecordData["Id"].ToString() 
+                             : Guid.Empty.ToString();
+
+    Guid currentRecordId = Guid.Parse(recordId);
+
+    // Determinar si es una actualización basándonos en el string del GUID
+    bool isUpdate = currentRecordId != Guid.Empty;
+    
+    // Detectamos si es una petición AJAX o una previsualización
     bool isPartial = Context.Request.Headers["X-Requested-With"] == "XMLHttpRequest" || ViewBag.IsPreview == true;
     if (isPartial) {
-        Layout = null; // Desactivamos el layout para el modal
+        Layout = null;
     }
+
 }
 
 <!-- En la parte superior de tu DynamicForm.cshtml -->
 <ul class="nav nav-tabs card-header-tabs" id="myTab" role="tablist">
-    <li class="nav-item">
-        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#form-tab">Datos</button>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#form-tab" type="button" role="tab">Datos</button>
     </li>
-    <li class="nav-item">
-        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#audit-tab" onclick="loadAuditTrail('@Model.EntityMetadata.Name', '@Model.RecordData["Id"]')">Historial de Cambios</button>
-    </li>
+    @* Solo permitimos consultar el historial si el registro ya existe físicamente en la base de datos *@
+    @if (currentRecordId != Guid.Empty)
+    {
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#audit-tab" type="button" role="tab" 
+                    onclick="loadAuditTrail('@Model.EntityMetadata.Name', '@currentRecordId')">
+                Historial de Cambios
+            </button>
+        </li>
+    }
 </ul>
 
 
+<div class="tab-pane fade" id="audit-tab" role="tabpanel">
+    <div id="auditContainer" class="p-3">
+        @* Se llena vía AJAX al hacer clic en la pestaña *@
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary"></div>
+        </div>
+    </div>
+</div>
+
+
 <div class="container-fluid mt-4">
-    <form asp-action="SaveRecord" asp-controller="Dynamic" method="post" id="dynamicForm">
-        <input type="hidden" name="EntityName" value="@Model.EntityMetadata.Name" />
-        <input type="hidden" name="RecordId" value="@(Model.RecordData["Id"] ?? Guid.Empty)" />
 
-        <div class="card shadow">
-            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="bi @Model.EntityMetadata.Icon"></i> 
-                    @(Model.RecordData["Id"] == null ? "New" : "Edit") @Model.EntityMetadata.Label
-                </h5>
-                <span class="badge bg-light text-dark">@Model.RecordData["Folio"]</span>
-            </div>
+    <div class="row">
+        <div class="col-lg-@(isUpdate ? "7" : "12") mb-4">
             
-            <div class="card-body">
-                @* Agrupamos las propiedades por fila *@
-                @{
-                    var rows = Model.EntityMetadata.Properties
-                                    .Where(p => p.IsVisible)
-                                    .GroupBy(p => p.GridRow)
-                                    .OrderBy(g => g.Key);
-                }
+        
 
 
 
-                @foreach (var row in rows)
-                {
-                    <div class="row mb-3">
-                        @foreach (var prop in row.OrderBy(p => p.GridColumn))
+            <form action="/Data/@Model.EntityMetadata.Name/Save" method="post" id="dynamicForm">
+                @Html.AntiForgeryToken() @* Generamos el token de seguridad manualmente *@
+
+                <input type="hidden" name="EntityName" value="@Model.EntityMetadata.Name" />
+
+                <input type="hidden" name="currentRecordId" value="@(Model.RecordData.ContainsKey("Id") ? Model.RecordData["Id"] : Guid.Empty)" />
+            
+                <div class="card shadow">
+                    <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi @Model.EntityMetadata.Icon"></i> 
+                             @Model.EntityMetadata.Label
+                        </h5>
+                        <span class="badge bg-light text-dark">@(Model.RecordData.ContainsKey("Folio") ? Model.RecordData["Folio"] : "")  </span>
+                    </div>
+                    
+                    <div class="card-body">
+                        @* Agrupamos las propiedades por fila *@
+                        @{
+                            var rows = Model.EntityMetadata.Properties
+                                            .Where(p => p.IsVisible)
+                                            .GroupBy(p => p.GridRow)
+                                            .OrderBy(g => g.Key);
+                        }
+
+
+
+                        @foreach (var row in rows)
                         {
-                            @* 
-                            Mapeo: 
-                            Columna 1 o 2 -> ancho 6 (col-md-6)
-                            Si por alguna razón fuera 0, lo tratamos como 1.
-                            *@
-                            <div class="col-md-6">
-                                <label class="form-label fw-bold">@prop.Label</label>
-                                
-
-                                @* Renderizado dinámico según DataTypeId *@
-                                @switch ((PropertyDataType)prop.DataTypeId)
+                            <div class="row mb-3">
+                                @foreach (var prop in row.OrderBy(p => p.GridColumn))
                                 {
-                                    case PropertyDataType.Boolean:
-                                        <div class="form-check form-switch mt-2">
-                                            <input type="checkbox" name="@prop.Name" class="form-check-input" 
-                                                   @(Convert.ToBoolean(Model.RecordData[prop.Name]) ? "checked" : "") 
-                                                   @(Model.AccessLevel < 2 || !prop.IsEditable ? "disabled" : "") />
-                                        </div>
-                                        break;
-
-                                    case PropertyDataType.LongText:
-                                        <textarea name="@prop.Name" class="form-control" rows="3"
-                                                  @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "")>@Model.RecordData[prop.Name]</textarea>
-                                        break;
-
-                                    case PropertyDataType.DateTime:
-                                        <input type="datetime-local" name="@prop.Name" class="form-control"
-                                               value="@(Convert.ToDateTime(Model.RecordData[prop.Name]).ToString("yyyy-MM-ddTHH:mm"))"
-                                               @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
-                                        break;
-
-                                    case PropertyDataType.RelatedEntity:
+                                    @* 
+                                    Mapeo: 
+                                    Columna 1 o 2 -> ancho 6 (col-md-6)
+                                    Si por alguna razón fuera 0, lo tratamos como 1.
+                                    *@
+                                    <div class="col-md-6">
 
 
-                                        @* En el caso de PropertyDataType.RelatedEntity *@
-                                        <div class="input-group">
-                                            <input type="hidden" id="val-@prop.Name" name="@prop.Name" value="@Model.RecordData[prop.Name]" />
-                                            
-                                            @* Quitamos 'readonly' y agregamos un disparador de búsqueda rápida *@
-                                            <input type="text" id="text-@prop.Name" class="form-control" 
-                                                placeholder="Escribe Folio o busca..."
-                                                value="@( isPartial ? "" : Model.RecordData[prop.Name + "_Text"] ?? "")"
-                                                onkeyup="quickSearch(event, '@prop.SourceDefinition', '@prop.Name')" />
-                                            
-                                            <button class="btn btn-outline-secondary" type="button" 
-                                                    onclick="openLookup('@prop.SourceDefinition', '@prop.Name')">
-                                                <i class="bi bi-search"></i>
-                                            </button>
-                                        </div>
-                                        <div id="suggestions-@prop.Name" class="list-group position-absolute w-100 shadow-lg" style="z-index: 1000; display:none;"></div>
+                                        @if(prop.Name.ToUpper().Equals("NAME"))
+                                        {
+                                        <label class="form-label fw-bold">@Model.EntityMetadata.NameLabel</label>
+
+                                        }
+                                        else
+                                        {
+                                        <label class="form-label fw-bold">@prop.Label</label>                                    
+                                        }
 
 
-                                        break;
 
-                                    default:
-                                        <input type="text" name="@prop.Name" class="form-control" 
-                                               value="@Model.RecordData[prop.Name]"
-                                               @(prop.IsRequired ? "required" : "")
-                                               @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
-                                        break;
+
+                                        
+
+                                        @* Renderizado dinámico según DataTypeId *@
+                                        @switch ((PropertyDataType)prop.DataTypeId)
+                                        {
+                                            case PropertyDataType.Boolean:
+                                            <div class="form-check form-switch mt-2">
+                                                    @{
+                                                        // Validación robusta: verifica si la llave existe y si no es nula/DBNull
+                                                        bool isChecked = false;
+                                                        if (Model.RecordData.ContainsKey(prop.Name) && 
+                                                            Model.RecordData[prop.Name] != null && 
+                                                            Model.RecordData[prop.Name] != DBNull.Value)
+                                                        {
+                                                            // Soporta conversiones desde string ("true", "1") o numéricos (1, 0)
+                                                            var rawBool = Model.RecordData[prop.Name].ToString();
+                                                            isChecked = rawBool == "True" || rawBool == "1" || rawBool == "true" || rawBool == "on";
+                                                        }
+                                                    }
+                                                    
+                                                    <input class="form-check-input" type="checkbox" 
+                                                        id="check-@prop.Name" 
+                                                        name="@prop.Name" 
+                                                        value="true"
+                                                        @(isChecked ? "checked" : "") />
+                                                        
+                                                    <label class="form-check-label fw-bold" for="check-@prop.Name">@prop.Label</label>
+                                                </div>
+                                                break;
+
+
+                                            case PropertyDataType.LongText:
+                                                <textarea name="@prop.Name" class="form-control" rows="3"
+                                                        @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "")>@Model.RecordData[prop.Name]</textarea>
+                                                break;
+
+                                            case PropertyDataType.DateTime:
+                                                <input type="datetime-local" name="@prop.Name" class="form-control"
+                                                    value="@(Convert.ToDateTime(Model.RecordData[prop.Name]).ToString("yyyy-MM-ddTHH:mm"))"
+                                                    @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
+                                                break;
+
+                                            case PropertyDataType.RelatedEntity:
+
+
+                                                @* En el caso de PropertyDataType.RelatedEntity *@
+                                                <div class="input-group">
+                                                    @* Input oculto para el GUID real *@
+                                                    <input type="hidden" id="val-@prop.Name" name="@prop.Name" 
+                                                        value="@(Model.RecordData.ContainsKey(prop.Name) ? Model.RecordData[prop.Name] : "")" />
+                                                    
+                                                    @* Input visible para el texto amigable (Folio/Nombre) - CORRECCIÓN DE ERROR *@
+                                                    @{
+                                                        string textKey = prop.Name + "_Text";
+                                                        string textValue = Model.RecordData.ContainsKey(textKey) && Model.RecordData[textKey] != null 
+                                                                        ? Model.RecordData[textKey].ToString() 
+                                                                        : "";
+                                                    }
+                                                    <input type="text" id="text-@prop.Name" class="form-control" 
+                                                        placeholder="Escribe para buscar..."
+                                                        value="@(isPartial ? "" : textValue)"
+                                                        onkeyup="quickSearch(event, '@prop.SourceDefinition', '@prop.Name')" />
+                                                    
+                                                    <button class="btn btn-outline-secondary" type="button" 
+                                                            onclick="openLookup('@prop.SourceDefinition', '@prop.Name')">
+                                                        <i class="bi bi-search"></i>
+                                                    </button>
+                                                </div>
+                                                <div id="suggestions-@prop.Name" class="list-group position-absolute w-100 shadow-lg" style="z-index: 1000; display:none;"></div>
+                                                break;
+
+                                            default:
+
+
+
+
+                                                <input type="text" name="@prop.Name" class="form-control" 
+                                                    value="@Model.RecordData[prop.Name]"
+                                                    @(prop.IsRequired ? "required" : "")
+                                                    @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
+                                                break;
+                                        }
+                                        
+                                        @if (!string.IsNullOrEmpty(prop.SourceDefinition) && prop.DataTypeId == (int)PropertyDataType.RelatedEntity)
+                                        {
+                                            <div class="form-text">Reference to @prop.SourceDefinition</div>
+                                        }
+
+
+                                    </div>
                                 }
-                                
-                                @if (!string.IsNullOrEmpty(prop.SourceDefinition) && prop.DataTypeId == (int)PropertyDataType.RelatedEntity)
-                                {
-                                    <div class="form-text">Reference to @prop.SourceDefinition</div>
-                                }
-
-
                             </div>
                         }
+
+
+
                     </div>
-                }
 
+                    <div class="card-footer text-end bg-light">
+                        <a href="javascript:history.back()" class="btn btn-secondary">Cancel</a>
+                        @if (Model.AccessLevel >= 2)
+                        {
+                            <button type="submit" class="btn btn-success">
+                                <i class="bi bi-save"></i> Save Changes
+                            </button>
+                        }
+                    </div>
+                </div>
+            </form>
 
-
-            </div>
-
-            <div class="card-footer text-end bg-light">
-                <a href="javascript:history.back()" class="btn btn-secondary">Cancel</a>
-                @if (Model.AccessLevel >= 2)
-                {
-                    <button type="submit" class="btn btn-success">
-                        <i class="bi bi-save"></i> Save Changes
-                    </button>
-                }
-            </div>
         </div>
-    </form>
+
+
+        <!-- COLUMNA DERECHA: Entidades Relacionadas (Ocupa 5 y solo aparece en Edición) -->
+        @if (isUpdate)
+        {
+            <div class="col-lg-5">
+                <div class="mb-2">
+                    <h5 class="text-muted fw-light h6 text-uppercase tracking-wider"><i class="bi bi-diagram-3"></i> Módulos Relacionados</h5>
+                </div>
+                
+                <!-- Invocación al ViewComponent dinámico -->
+                @{ ViewBag.ParentRecordId = currentRecordId; }
+                @await Component.InvokeAsync("RelatedEntities", new { parentEntityName = Model.EntityMetadata.Name, parentRecordId = currentRecordId })
+            </div>
+        }
+
+
+    </div>
+
+
 </div>
+
+
+<script src="/js/lookup-engine.js" />
+<script src="/js/autocomplete-engine.js" />
+<script>
+
+    function loadAuditTrail(entity, id) {
+        // Ajustamos la URL eliminando la repetición del nombre de la entidad
+        $.get(`/Data/${entity}/AuditTrail/${id}`, function(html) {
+            $('#auditContainer').html(html);
+        });
+    }    
+</script>
