@@ -4,7 +4,7 @@
 [![.NET Core](https://shields.io)](https://microsoft.com)
 [![Architecture: Clean](https://shields.io)]()
 
-**OpenPlaDiC** es una plataforma web *Low-Code* y un motor relacional dinámico basado en .NET 8, diseñado para permitir la creación, gestión y automatización de estructuras de datos (entidades y campos) en tiempo de ejecución desde el navegador, sin necesidad de escribir código SQL o recompilar la aplicación.
+**OpenPlaDiC** es una plataforma web *Low-Code* y un motor relacional dinámico basado en .NET 10, diseñado para permitir la creación, gestión y automatización de estructuras de datos (entidades y campos) en tiempo de ejecución desde el navegador, sin necesidad de escribir código SQL o recompilar la aplicación.
 
 Ideal para construir CRMs, ERPs, sistemas de gestión a la medida o cualquier aplicación que requiera una alta flexibilidad en su modelo de datos y flujos transaccionales dinámicos.
 
@@ -42,9 +42,9 @@ OpenPlaDiC/
 
 Para ejecutar este proyecto en tu entorno local necesitas contar con:
 
-*   [.NET 8.0 SDK](https://microsoft.com/dotnet/8.0) o superior.
+*   [.NET 10.0 SDK](https://microsoft.com/dotnet/10.0) o superior.
 *   [SQL Server](https://microsoft.com) (Express, Developer o superior).
-*   Visual Studio 2022 o Visual Studio Code.
+*   Visual Studio 2022 (última actualización) o Visual Studio Code con el C# Dev Kit.
 
 ---
 
