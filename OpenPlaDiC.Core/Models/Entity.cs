@@ -26,6 +26,8 @@ public class Entity
         public bool IsAvailable { get; set; }
         public DateTime CreatedAt { get; set; }
         public Guid CreatedById { get; set; }
+        public string? ListQuery{ get; set; }
+        public int PageSize { get; set; }
         
         // Relación con propiedades
         public virtual ICollection<EntityProperty>? Properties { get; set; }

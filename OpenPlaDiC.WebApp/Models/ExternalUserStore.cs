@@ -20,7 +20,7 @@ namespace OpenPlaDiC.WebApp.Models
 
             if (!response.IsSuccess) return null;
 
-            return new ApplicationUser() { Id = response.Data.Id.ToString(), UserName = response.Data.Value, Email = response.Data.Text, FullName = response.Data.Name, NormalizedEmail = response.Data.Text, IsMaster = response.Data.Flag };
+            return new ApplicationUser() { Id = response.Data.Id.ToString(), UserName = response.Data.Value.ToString(), Email = response.Data.Text, FullName = response.Data.Name, NormalizedEmail = response.Data.Text, IsMaster = response.Data.Flag };
         }
 
         // Este método es crucial: aquí es donde la API externa valida la contraseña

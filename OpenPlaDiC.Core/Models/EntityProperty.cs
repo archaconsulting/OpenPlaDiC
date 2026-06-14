@@ -24,6 +24,7 @@ public class EntityProperty
         // Layout para Renderizado Dinámico
         public int GridRow { get; set; }
         public int GridColumn { get; set; }
+        public bool OnList { get; set; }
         public int Sequence { get; set; }
         
         public DateTime CreatedAt { get; set; }

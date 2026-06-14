@@ -8,21 +8,26 @@ using OpenPlaDiC.DAL;
 using OpenPlaDiC.Framework;
 using ClosedXML.Excel;
 using System.Text.Json;
+using OpenPlaDiC.Core.Models.DynamicQuery;
+using OpenPlaDiC.DAL.Extensions;
 
 
 namespace OpenPlaDiC.BIZ;
 
 public interface IDynamicDataService
 {
-    Task<Response<DataTable>> GetAllAsync(string entityName);
+    Task<Response<DataTable>> GetAllAsync(string entityName, bool allFields = true);
     Task<Response<Dictionary<string, object>>> GetByIdAsync(string entityName, Guid id);
     Response<Dictionary<string, object>> CreateEmptyDictionary(Entity entity);
     Task<Response<bool>> SaveAsync(string entityName, Guid id, IFormCollection form, Entity entity, Guid userId);
     Task<Response<byte[]>> ExportToExcelAsync(string entityName);
     Task<Response<bool>> DeleteLogicalAsync(string entityName, Guid id, Guid userId);
-
     Task<Response<Dictionary<string, object>>> CreateEmptyDictionaryAsync(Entity entity, IQueryCollection query);
-    
+    Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync(
+        string entityName, 
+        HashSet<FilterCriterion> criteria,
+        int page,
+        bool isMaster);
 
 
 }
@@ -31,24 +36,78 @@ public interface IDynamicDataService
 public class DynamicDataService : IDynamicDataService
 {
     private readonly AppDbContext _context;
+    private readonly IMetadataService _metadataService;
+
     private readonly IRazorRenderService _razorService; // Inyectar esto
     private readonly string _triggerPath;
 
 
-    public DynamicDataService(AppDbContext context, IWebHostEnvironment env, IRazorRenderService razorService)
+    public DynamicDataService(AppDbContext context, IWebHostEnvironment env, IRazorRenderService razorService, IMetadataService metadataService)
     {
         _context = context;
         _razorService = razorService;
+        _metadataService = metadataService;
         _triggerPath = Path.Combine(env.ContentRootPath, "Views", "Custom", "Triggers");
 
         if (!Directory.Exists(_triggerPath))
             Directory.CreateDirectory(_triggerPath);
     }
 
-    public async Task<Response<DataTable>> GetAllAsync(string entityName)
+    public async Task<Response<DataTable>> GetAllAsync(string entityName, bool allFields = true)
     {
+        if(allFields)
+        {
+            
+            return await _context.GetQueryAsync($"SELECT * FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC");
+
+        }
+
+
+
+        var respE = await _metadataService.GetEntityWithPropertiesAsync(entityName);
+
+        if (respE != null)
+        {
+
+            if( string.IsNullOrEmpty( respE.ListQuery))
+            {
+            
+                string sql = " select e.Id, e.Folio, e.Number " + (respE.UseNameField ? ", e.Name " : "")  ;
+
+                var list = respE.Properties.Where(x => x.OnList).ToList();
+
+                if(list.Count > 0)
+                {
+                    sql = " select e.Id, e.Folio, e.Number ";
+
+                    foreach(var prop in list)
+                    {
+                        
+                        sql += " ,e."+prop.Name +" ["+prop.Label+"] ";
+
+                    }
+                }
+
+                sql += $" FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC";
+
+                return await _context.GetQueryAsync(sql);
+            }
+            else
+            {
+                
+                return await _context.GetQueryAsync(respE.ListQuery);
+
+            }
+
+        }
+        else
+        {
+            
+            return await _context.GetQueryAsync($"SELECT * FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC");
+
+        }
+
         // Reutilizamos la respuesta estandarizada que ya devuelve el DbContext
-        return await _context.GetQueryAsync($"SELECT * FROM {entityName} WHERE IsDeleted = 0 ORDER BY CreatedAt DESC");
     }
 
     public async Task<Response<Dictionary<string, object>>> GetById2Async(string entityName, Guid id)
@@ -531,7 +590,129 @@ public class DynamicDataService : IDynamicDataService
     }
 
 
+    public async Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync0(
+        string entityName, 
+        HashSet<FilterCriterion> criteria, bool includeDeleted = false)
+    {
+        // 1. Recuperamos la metadata de la entidad
+        var entityMetadata = await _metadataService.GetEntityMetadataAsync(entityName);
+        if (entityMetadata == null) 
+            throw new ArgumentException($"La entidad '{entityName}' no existe en la metadata del Kernel.");
 
+        
+        Dictionary<string, int> propertyTypes = ((IEnumerable<EntityProperty>)entityMetadata.Properties)
+        .ToDictionary(p => p.Name, p => p.DataTypeId);            
+
+        // 2. Construimos la cláusula WHERE usando nuestro Builder
+        var (sqlWhere, dynamicParams) = DynamicQueryBuilder.BuildWhereClause(criteria, propertyTypes);
+
+        if(string.IsNullOrEmpty(sqlWhere) && !includeDeleted)
+        {
+            sqlWhere = " WHERE IsDeleted = 0 ";
+        }
+
+        // 3. Sanitizamos estrictamente el nombre de la tabla
+        string safeTableName = $"[{entityName.Replace("]", "]]")}]";
+        string finalSql = $"SELECT * FROM {safeTableName} {sqlWhere} ORDER BY CreatedAt DESC";
+
+        // 4. Mapeo de Dapper (DynamicParameters) al formato nativo del Kernel (GlobalItem[])
+        // Asumiendo que GlobalItem es un key-value pair estructurado de tu Kernel (ej: Name/Value o Key/Value)
+        var globalParams = dynamicParams.ParameterNames
+            .Select(pName => new GlobalItem 
+            { 
+                Name = pName, // O la propiedad correspondiente en tu estructura GlobalItem
+                Value = dynamicParams.Get<object>(pName).ToString() ?? "" //DBNull.Value 
+            })
+            .ToArray();
+
+        // 5. Consumimos el método oficial del Kernel sobre tu AppDbContext
+        var response = await _context.GetQueryAsync(finalSql, globalParams);
+
+        // Verificamos el estado de la respuesta del Kernel (suponiendo que sigue el patrón Result/Response estándar)
+        if (response == null || response.Data == null)
+            return Enumerable.Empty<Dictionary<string, object>>();
+
+        // 6. Traducimos el DataTable devuelto a la colección de diccionarios que espera la UI asimétrica
+        return ConvertDataTableToDictionaries(response.Data);
+    }
+
+    public async Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync(
+        string entityName, 
+        HashSet<FilterCriterion> criteria,
+        int page,
+        bool isMaster) // 🛡️ Inyectamos el flag de Súper Usuario desde el controlador
+    {
+        var entityMetadata = await _metadataService.GetEntityMetadataAsync(entityName);
+        if (entityMetadata == null) 
+            throw new ArgumentException($"La entidad '{entityName}' no existe.");
+
+        int configuredPageSize = entityMetadata.PageSize; 
+        
+        Dictionary<string, int> propertyTypes = ((IEnumerable<EntityProperty>)entityMetadata.Properties)
+            .ToDictionary(p => p.Name, p => p.DataTypeId);
+
+        // 1. Obtenemos la cláusula de los filtros del usuario. 
+        // NOTA: Debes remover el 'WHERE IsDeleted = 0' de adentro del DynamicQueryBuilder para que solo arme los ANDs de los inputs
+        var (sqlFilters, globalParams) = DynamicQueryBuilder.BuildWhereClause(criteria, propertyTypes);
+        
+        string safeTableName = $"[{entityName.Replace("]", "]]")}]";
+
+        // 2. Establecemos la Cláusula Base de la Plataforma
+        // Si es IsMaster, el WHERE base es '1=1' (trae todo). Si no, forzamos 'IsDeleted = 0'
+        string baseWhere = isMaster ? " WHERE 1=1 " : " WHERE IsDeleted = 0 ";
+
+        // 3. Concatenamos de forma segura la base con los filtros avanzados si existen
+        if (!string.IsNullOrWhiteSpace(sqlFilters))
+        {
+            // Como sqlFilters ya viene sanitizado con sus "AND ...", simplemente lo adjuntamos
+            baseWhere += sqlFilters;
+        }
+
+        // Construimos el query unificado final
+        string finalSql = $"SELECT * FROM {safeTableName} {baseWhere} ORDER BY CreatedAt DESC";
+
+        if (configuredPageSize > 0)
+        {
+            int rowsToSkip = (page - 1) * configuredPageSize;
+            finalSql += $" OFFSET {rowsToSkip} ROWS FETCH NEXT {configuredPageSize} ROWS ONLY;";
+        }
+
+        var parameters = globalParams.ParameterNames
+            .Select(pName => new GlobalItem 
+            { 
+                Name = pName, 
+                Value = globalParams.Get<object>(pName).ToString() ?? "" 
+            })
+            .ToArray();
+
+        var response = await _context.GetQueryAsync(finalSql, parameters);
+
+        if (response?.Data == null)
+            return Enumerable.Empty<Dictionary<string, object>>();
+
+        return ConvertDataTableToDictionaries(response.Data);
+    }
+
+    /// <summary>
+    /// Helper privado para transformar el DataTable a Diccionarios respetando el blindaje contra nulos
+    /// </summary>
+    private static IEnumerable<Dictionary<string, object>> ConvertDataTableToDictionaries(DataTable table)
+    {
+        var rows = new List<Dictionary<string, object>>();
+        
+        foreach (DataRow row in table.Rows)
+        {
+            var dict = new Dictionary<string, object>();
+            foreach (DataColumn col in table.Columns)
+            {
+                // Mantenemos el blindaje estricto contra DBNull exigido en tus reglas estabilizadas
+                dict[col.ColumnName] = row[col] == DBNull.Value ? null! : row[col];
+            }
+            rows.Add(dict);
+        }
+        
+        return rows;
+    }
 
 }
 

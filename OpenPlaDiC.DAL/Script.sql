@@ -109,11 +109,15 @@ CREATE TABLE EntityProperty (
     -- Layout
     GridRow INT NOT NULL DEFAULT 0,
     GridColumn INT NOT NULL DEFAULT 0,
+    OnList BIT NOT NULL DEFAULT 0,
     Sequence INT NOT NULL DEFAULT 0,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedById UNIQUEIDENTIFIER NOT NULL,
     UNIQUE(EntityId, Name)
 );
+
+
+
 
 -- 3. SEGURIDAD, VISTAS DINÁMICAS Y LOGS
 CREATE TABLE DynamicView (
@@ -207,22 +211,64 @@ BEGIN
 END;
 GO
 
+
+--exec sp_Core_AddProperty 'Proveedor','TipoProveedor','Tipo de proveedor',17,'0:Transportista,1:Otro',1,0,1,1,1,1,0,'00000000-0000-0000-0000-000000000000';
+
+
 -- 4.3 Crear Propiedad (Campo Dinámico)
-CREATE PROCEDURE sp_Core_AddProperty
+CREATE OR ALTER PROCEDURE sp_Core_AddProperty
     @EntityName NVARCHAR(120), @PropertyName NVARCHAR(120), @Label NVARCHAR(120), @DataTypeId INT,
-    @RelatedEntityName NVARCHAR(120) = NULL, @IsRequired BIT = 0, @IsUnique BIT = 0, 
-    @IsIndexed BIT = 0, @AllowCascadeDelete BIT = 0, @CreatedById UNIQUEIDENTIFIER
+    @RelatedEntityName NVARCHAR(120) = NULL, @IsRequired BIT = 0, @IsUnique BIT = 0, @GridRow INT, @GridColumn INT, @OnList BIT,
+    @IsIndexed BIT = 0, @AllowCascadeDelete BIT = 0, @CreatedById UNIQUEIDENTIFIER, @DefaultValue NVARCHAR(120) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE @EntityId UNIQUEIDENTIFIER = (SELECT Id FROM Entity WHERE Name = @EntityName);
     DECLARE @SqlType NVARCHAR(100) = (SELECT SqlDefinition FROM DataType WHERE Id = @DataTypeId);
+    DECLARE @DefVal NVARCHAR(100) = '';
+
+
+
+    IF(@IsRequired = 1)
+    BEGIN
+        IF(@DefaultValue IS NOT NULL)
+        BEGIN
+            SET @DefVal = ' ' + @DefaultValue +' ';
+        END
+        ELSE
+        BEGIN
+            SET @DefVal =
+            CASE 
+                WHEN @DataTypeId IN (1,2,11,17) THEN ' DEFAULT 0 '
+                WHEN @DataTypeId = 0 THEN ' DEFAULT '''' '
+                WHEN @DataTypeId IN (3, 103) THEN ' DEFAULT GETDATE() '
+                WHEN @DataTypeId = 10 THEN ' '
+            END           
+
+        END
+
+
+    END
+
+
+
+
     BEGIN TRY
         BEGIN TRANSACTION;
-        INSERT INTO EntityProperty (EntityId, Name, Label, DataTypeId, IsRequired, IsUnique, IsIndexed, AllowCascadeDelete, CreatedById, SourceDefinition)
-        VALUES (@EntityId, @PropertyName, @Label, @DataTypeId, @IsRequired, @IsUnique, @IsIndexed, @AllowCascadeDelete, @CreatedById, @RelatedEntityName);
 
-        DECLARE @sql NVARCHAR(MAX) = N'ALTER TABLE ' + QUOTENAME(@EntityName) + ' ADD ' + QUOTENAME(@PropertyName) + ' ' + @SqlType + CASE WHEN @IsRequired = 1 THEN ' NOT NULL' ELSE ' NULL' END;
+
+
+
+        INSERT INTO EntityProperty (EntityId, Name, Label, DataTypeId, IsRequired, IsUnique, IsIndexed, AllowCascadeDelete, CreatedById, SourceDefinition, GridRow, GridColumn, OnList)
+        VALUES (@EntityId, @PropertyName, @Label, @DataTypeId, @IsRequired, @IsUnique, @IsIndexed, @AllowCascadeDelete, @CreatedById, @RelatedEntityName, @GridRow, @GridColumn, @OnList);
+
+
+        
+
+        DECLARE @sql NVARCHAR(MAX) = N'ALTER TABLE ' + QUOTENAME(@EntityName) + ' ADD ' + QUOTENAME(@PropertyName) + ' ' + @SqlType + CASE WHEN @IsRequired = 1 THEN ' NOT NULL ' + @DefVal ELSE ' NULL' END;
+        
+        select @sql;
+
         IF @DataTypeId IN (10, 19, 20) AND @RelatedEntityName IS NOT NULL
             SET @sql += N' CONSTRAINT ' + QUOTENAME('FK_' + @EntityName + '_' + @PropertyName) + ' FOREIGN KEY REFERENCES ' + QUOTENAME(@RelatedEntityName) + '(Id)' + CASE WHEN @AllowCascadeDelete = 1 THEN ' ON DELETE CASCADE' ELSE '' END;
         EXEC sp_executesql @sql;
@@ -242,6 +288,10 @@ VALUES ('00000000-0000-0000-0000-000000000000', 'Super User', 'admin@openpladic.
 GO
 
 
+INSERT INTO DataType (Id, Name, SqlDefinition) 
+VALUES (17, 'ListValue', 'INT'); -- Físicamente en SQL es un entero corto
+GO
+
 
 CREATE INDEX IX_Record_SearchContent ON [Record] (Folio) INCLUDE (SearchContent);
 
@@ -250,6 +300,7 @@ GO
 CREATE or ALTER PROCEDURE sp_Core_CreateEntity
     @Name NVARCHAR(128),
     @Label NVARCHAR(128),
+    @PageSize INT,
     @Prefix NVARCHAR(5),
     @Icon NVARCHAR(50),
     @CreatedById UNIQUEIDENTIFIER,
@@ -270,8 +321,8 @@ BEGIN
         -- 2. Insertar en la tabla maestra de Metadata
         DECLARE @EntityId UNIQUEIDENTIFIER = NEWID();
         
-        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, IsAvailable, IsSystem, CreatedAt, CreatedById)
-        VALUES (@EntityId, @Name, @Label, @Prefix, @Icon, 1, 0, GETDATE(), @CreatedById);
+        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, IsAvailable, IsSystem, CreatedAt, CreatedById, UseNameField, PageSize)
+        VALUES (@EntityId, @Name, @Label, @Prefix, @Icon, 1, 0, GETDATE(), @CreatedById, @UseNameField, @PageSize);
 
         -- 3. Crear la TABLA FÍSICA con sus columnas base del Kernel
         DECLARE @Sql NVARCHAR(MAX);
@@ -328,6 +379,7 @@ CREATE OR ALTER PROCEDURE sp_Core_UpdatePropertyMetadata
     @GridRow INT,
     @GridColumn INT,
     @IsRequired BIT,
+    @OnList BIT,
     @UpdatedById UNIQUEIDENTIFIER
 AS
 BEGIN
@@ -338,6 +390,7 @@ BEGIN
             GridRow = @GridRow,
             GridColumn = @GridColumn,
             IsRequired = @IsRequired,
+            OnList = @OnList,
             UpdatedAt = GETDATE(),
             UpdatedById = @UpdatedById
         WHERE Id = @PropertyId;
@@ -379,6 +432,10 @@ ALTER TABLE DynamicView ADD IsPublic BIT NOT NULL DEFAULT 0;
 GO
 
 
+ALTER TABLE [dbo].[Entity] 
+ADD [PageSize] INT NOT NULL DEFAULT 20; -- Nacen protegidas contra sobrecargas
+GO
+
 ALTER TABLE EntityProperty ADD IsVisible BIT NOT NULL DEFAULT 1;
 ALTER TABLE EntityProperty ADD IsEditable BIT NOT NULL DEFAULT 1;
 GO
@@ -419,7 +476,7 @@ CREATE TABLE LoginLog (
 
 GO
 
-CREATE PROCEDURE sp_Core_DropProperty
+CREATE OR ALTER PROCEDURE sp_Core_DropProperty
     @EntityName NVARCHAR(128),
     @PropertyName NVARCHAR(128)
 AS
@@ -431,16 +488,35 @@ BEGIN
         -- 1. Obtener el ID de la entidad y de la propiedad
         DECLARE @EntityId UNIQUEIDENTIFIER;
         DECLARE @PropertyId UNIQUEIDENTIFIER;
+        DECLARE @ConstraintName NVARCHAR(200);
 
         SELECT @EntityId = Id FROM Entity WHERE Name = @EntityName;
         SELECT @PropertyId = Id FROM EntityProperty WHERE EntityId = @EntityId AND Name = @PropertyName;
 
+        SELECT @ConstraintName = df.name
+        FROM sys.default_constraints df
+        INNER JOIN sys.columns c ON df.parent_object_id = c.object_id AND df.parent_column_id = c.column_id
+        WHERE df.parent_object_id = OBJECT_ID(@EntityName) AND c.name = @PropertyName;
+
+
+
+
         IF @PropertyId IS NULL
         BEGIN
             THROW 50001, 'La propiedad no existe en la metadata.', 1;
-        END
+        END;
 
-        -- 2. Eliminar de la tabla física (Dinamismo puro)
+        IF @ConstraintName IS NOT NULL
+        BEGIN
+            DECLARE @SqlD NVARCHAR(MAX);
+            SET @SqlD = N'ALTER TABLE '+ QUOTENAME(@EntityName) + ' DROP CONSTRAINT ' + @ConstraintName;
+
+            EXEC(@SqlD);
+        END
+            
+
+
+
         DECLARE @Sql NVARCHAR(MAX);
         SET @Sql = N'ALTER TABLE ' + QUOTENAME(@EntityName) + ' DROP COLUMN ' + QUOTENAME(@PropertyName);
         EXEC sp_executesql @Sql;

@@ -5,11 +5,10 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
 
-  <!-- To publish views instead of views.dll-->
-    <EnableDefaultRazorGenerateItems>false</EnableDefaultRazorGenerateItems>
-	<EnableDefaultRazorComponentItems>false</EnableDefaultRazorComponentItems>
-	<CopyRazorGenerateFilesToPublishDirectory>true</CopyRazorGenerateFilesToPublishDirectory>
+    <!-- <RazorCompileOnBuild Condition="'$(Configuration)' == 'Debug'">false</RazorCompileOnBuild> -->
 
+    <RazorCompileOnPublish>false</RazorCompileOnPublish>
+    <CopyRazorGenerateFilesToPublishDirectory>true</CopyRazorGenerateFilesToPublishDirectory>
 
   </PropertyGroup>
 
@@ -37,6 +36,7 @@
     <Folder Include="Views/EmailSettings/" />
     <Folder Include="Views/EntityManager/" />
     <Folder Include="Views/Error/" />
+    <Folder Include="Views/SchemaAdmin/" />
     <Folder Include="Views/Search/" />
     <Folder Include="Views/Security/" />
     <Folder Include="Views/Shared/Components/Breadcrumb/" />

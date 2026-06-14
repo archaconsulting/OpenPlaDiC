@@ -10,6 +10,7 @@ public interface IMetadataService
     Task<Entity> GetEntityByNameAsync(string entityName);
     Task<Entity> GetEntityWithPropertiesAsync(string entityName);
     Task<IEnumerable<Entity>> GetAllEntitiesAsync(bool includeAll = false);
+    Task<dynamic?> GetEntityMetadataAsync(string entityName);
 }
 
 public class MetadataService : IMetadataService
@@ -54,5 +55,14 @@ public class MetadataService : IMetadataService
             }
 
             
+        }
+
+        public async Task<dynamic?> GetEntityMetadataAsync(string entityName)
+        {
+            // Aquí va tu lógica actual para recuperar la definición de la entidad desde SQL Server.
+            // Un ejemplo rápido usando EF Core sobre las tablas del Kernel:
+            return await _context.Entities
+                .Include(e => e.Properties)
+                .FirstOrDefaultAsync(e => e.Name == entityName);
         }
     }

@@ -252,7 +252,8 @@ namespace OpenPlaDiC.DAL
                 {
                     // Asegura que el nombre comience con @
                     string paramName = item.Name.StartsWith("@") ? item.Name : "@" + item.Name;
-                    command.Parameters.AddWithValue(paramName, string.IsNullOrEmpty(item.Value) ? DBNull.Value : item.Value);
+                    //command.Parameters.AddWithValue(paramName, string.IsNullOrEmpty(item.Value) ? DBNull.Value : item.Value);
+                    command.Parameters.AddWithValue(paramName, item.Value);
                 }
             }
         }

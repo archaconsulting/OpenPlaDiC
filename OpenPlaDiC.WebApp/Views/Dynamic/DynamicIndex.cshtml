@@ -1,32 +1,109 @@
 ﻿@using System.Data
 @using OpenPlaDiC.Core.Models
-@model DataTable
+@model OpenPlaDiC.WebApp.Models.DynamicIndexViewModel
 @{
-    var entity = (Entity)ViewBag.Entity;
+    // Mantengo tus variables de control de acceso del Kernel
     var access = (AccessControl)ViewBag.Access;
-    ViewData["Title"] = entity.Label;
+    
+    // Ahora leemos la información central directamente de la metadata del ViewModel
+    var entityName = Model.EntityMetadata.Name;
+    var entityLabel = Model.EntityMetadata.Label ?? "Entidad Dinámica";
+    var nameLabel = Model.EntityMetadata.NameLabel ?? "Nombre / Razón Social";
+
+    ViewData["Title"] = entityLabel;
 }
 
+
+@{
+    // Helper para transformar el string "0:Transportista,1:Taller" en un Diccionario de C#
+    Dictionary<int, string> ParseListValues(string? sourceDefinition)
+    {
+        var dictionary = new Dictionary<int, string>();
+        if (string.IsNullOrWhiteSpace(sourceDefinition)) return dictionary;
+
+        var items = sourceDefinition.Split(',');
+        foreach (var item in items)
+        {
+            var parts = item.Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int key))
+            {
+                dictionary[key] = parts[1];
+            }
+        }
+        return dictionary;
+    }
+}
+
+<div class="card mb-4 shadow-sm">
+    <div class="card-header bg-light d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-filter me-2"></i> Filtros Avanzados</h5>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#filterPanel">
+            <i class="fas fa-chevron-down"></i>
+        </button>
+    </div>
+    <div id="filterPanel" class="collapse show card-body">
+        <form action="/Data/@entityName" method="GET">
+            <div class="row g-3">
+                @foreach (var prop in Model.EntityMetadata.Properties)
+                {
+                    // Regla de negocio: Solo renderizar filtros para propiedades marcadas para mostrarse en el Grid
+                    if (prop.OnList == true)
+                    {
+                        <div class="col-md-4">
+                            <label class="form-label fw-bold small text-muted">@prop.Label</label>
+
+                            @if (prop.DataTypeId == 10) // RelatedEntity (Lookup)
+                            {
+                                var currentValue = Model.CurrentFilters.ContainsKey(prop.Name) ? Model.CurrentFilters[prop.Name] : "";
+                                <select name="@prop.Name" class="form-select form-select-sm">
+                                    <option value="">-- Todos --</option>
+                                    @* Los <option> se cargan dinámicamente según el SourceDefinition *@
+                                </select>
+                            }
+                            else if (prop.DataTypeId == 3 || prop.DataTypeId == 4) // Numérico o Fecha (Rango)
+                            {
+                                var valFrom = Model.CurrentFilters.ContainsKey($"{prop.Name}_From") ? Model.CurrentFilters[$"{prop.Name}_From"] : "";
+                                var valTo = Model.CurrentFilters.ContainsKey($"{prop.Name}_To") ? Model.CurrentFilters[$"{prop.Name}_To"] : "";
+                                
+                                <div class="input-group input-group-sm">
+                                    <input type="@(prop.DataTypeId == 4 ? "date" : "number")" name="@(prop.Name)_From" value="@valFrom" class="form-control" placeholder="Min" />
+                                    <span class="input-group-text bg-white border-start-0 border-end-0">a</span>
+                                    <input type="@(prop.DataTypeId == 4 ? "date" : "number")" name="@(prop.Name)_To" value="@valTo" class="form-control" placeholder="Max" />
+                                </div>
+                            }
+                            else // Texto por defecto
+                            {
+                                var currentText = Model.CurrentFilters.ContainsKey(prop.Name) ? Model.CurrentFilters[prop.Name] : "";
+                                <input type="text" name="@prop.Name" value="@currentText" class="form-control form-control-sm" placeholder="Buscar..." />
+                            }
+                        </div>
+                    }
+                }
+            </div>
+            <div class="d-flex justify-content-end mt-3 gap-2">
+                <a href="/Data/@entityName" class="btn btn-sm btn-light border">Limpiar</a>
+                <button type="submit" class="btn btn-sm btn-primary">Aplicar Filtros</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <div class="container-fluid px-4 mt-4">
-    <!-- Encabezado con Acciones Globales -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
             <h2 class="h3 mb-0 text-gray-800">
-                </i>
-                @entity.Label
+                @entityLabel
             </h2>
-            <p class="text-muted small mb-0">Gestión de registros para la entidad: <code>@entity.Name</code></p>
+            <p class="text-muted small mb-0">Gestión de registros para la entidad: <code>@entityName</code></p>
         </div>
         <div class="d-flex gap-2">
-            <!-- Botón de Exportación -->
-            <a>
-            
+            <a class="btn btn-sm btn-outline-success d-flex align-items-center gap-1">
                 <i class="bi bi-file-earmark-excel"></i> Exportar Excel
             </a>
 
             @if (access.CanCreate)
             {
-                <a class="btn btn-primary" href="/Data/@entity.Name/Edit">
+                <a class="btn btn-primary" href="/Data/@entityName/Edit">
                     <i class="bi bi-plus-lg"></i> Nuevo Registro
                 </a>
             }
@@ -41,102 +118,115 @@
         </div>
     }
 
-    <!-- Card Principal con la Tabla -->
     <div class="card shadow-sm border-0">
         <div class="card-body p-0">
             <div class="table-responsive">
                 <table class="table table-hover align-middle mb-0" id="dynamicTable">
                     <thead class="table-light border-bottom">
                         <tr>
-                            <th class="ps-4">Folio</th>
-                            @* Dibujamos dinámicamente las columnas basadas en el DataTable *@
-                            @foreach (DataColumn col in Model.Columns)
+                            <th class="ps-4" style="width: 100px;">Folio</th>
+                            
+                            @foreach (var prop in Model.EntityMetadata.Properties)
                             {
-                                // Omitimos columnas técnicas que no queremos mostrar en el Grid
-                                if (col.ColumnName != "Id" && col.ColumnName != "Folio" && 
-                                
-                                        col.ColumnName != "Number" &&
-                                        col.ColumnName != "IsAvailable" &&
-                                        col.ColumnName != "CreatedAt" &&
-                                        col.ColumnName != "UpdatedAt" &&
-                                        col.ColumnName != "UpdatedById" &&                                
-
-
-                                    col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
+                                if (prop.OnList == true)
                                 {
-                                    @if(col.ColumnName.ToUpper().Equals("NAME"))
+                                    if (prop.Name.ToUpper().Equals("NAME"))
                                     {
-
-                                    <th>@entity.NameLabel</th>
-
-
+                                        <th>@nameLabel</th>
                                     }
                                     else
                                     {
-
-                                    <th>@col.ColumnName</th>
-                                        
+                                        <th>@prop.Label</th>
                                     }
                                 }
                             }
-                            <th class="text-end pe-4">Acciones</th>
+                            <th class="text-end pe-4" style="width: 130px;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
-                        @if (Model.Rows.Count == 0)
+                        @if (Model.Data == null || !Model.Data.Any())
                         {
                             <tr>
                                 <td colspan="100%" class="text-center py-5 text-muted">
                                     <i class="bi bi-folder2-open display-4 d-block mb-3"></i>
-                                    No se encontraron registros para @entity.Label.
+                                    No se encontraron registros para @entityLabel.
                                 </td>
                             </tr>
                         }
                         else
                         {
-                            @foreach (DataRow row in Model.Rows)
+                            @foreach (var row in Model.Data)
                             {
                                 <tr>
                                     <td class="ps-4">
-                                        <span class="badge bg-light text-primary border fw-bold">@row["Folio"]</span>
+                                        @* Regla Nro 3: Blindaje contra nulos y ausencias estructurales de columnas antiguas *@
+                                        @{ var folioVal = row.ContainsKey("Folio") ? row["Folio"]?.ToString() : "-"; }
+
+                                        @{ bool deletedRow = Convert.ToBoolean(row["IsDeleted"]); }
+
+                                        <span class="badge @( deletedRow ? "bg-secondary text-light": "bg-light text-primary")  border fw-bold">@folioVal</span>
                                     </td>
                                     
-                                    @foreach (DataColumn col in Model.Columns)
+                                    @foreach (EntityProperty prop in Model.EntityMetadata.Properties)
                                     {
-                                        if (col.ColumnName != "Id" && col.ColumnName != "Folio" &&  
-                                        
-                                        col.ColumnName != "Number" &&
-                                        col.ColumnName != "IsAvailable" &&
-                                        col.ColumnName != "CreatedAt" &&
-                                        col.ColumnName != "UpdatedAt" &&
-                                        col.ColumnName != "UpdatedById" &&
-                                        
-                                            col.ColumnName != "IsDeleted" && col.ColumnName != "CreatedById")
+                                        if (prop.OnList == true)
                                         {
                                             <td>
-                                                @{
-                                                    var val = row[col.ColumnName];
-                                                    // Formateo simple para booleanos
-                                                    if (val is bool b) {
-                                                        <i class="bi @(b ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
-                                                    } else {
-                                                        @val?.ToString()
+                                                @if (row.ContainsKey(prop.Name) && row[prop.Name] != null)
+                                                {
+                                                    var rawVal = row[prop.Name];
+
+                                                    if (prop.DataTypeId == 2 || rawVal is bool) // Tipo Booleano / Switch
+                                                    {
+                                                        var isChecked = Convert.ToBoolean(rawVal);
+                                                        <i class="bi @(isChecked ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
                                                     }
+                                                    else if (prop.DataTypeId == 4) // Tipo Fecha
+                                                    {
+                                                        @Convert.ToDateTime(rawVal).ToString("dd/MM/yyyy HH:mm")
+                                                    }
+                                                    else if (prop.DataTypeId == 17)
+                                                    {
+                                                        var opciones = ParseListValues(prop.SourceDefinition);
+                                                        if (row.ContainsKey(prop.Name) && int.TryParse(row[prop.Name]?.ToString(), out int intKey) && opciones.ContainsKey(intKey))
+                                                        {
+                                                            <span class="badge bg-light text-dark border">@opciones[intKey]</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted">-</span>
+                                                        }
+                                                    } 
+                                                    else
+                                                    {
+                                                        @rawVal.ToString()
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted small">-</span>
                                                 }
                                             </td>
                                         }
                                     }
-                                    
-
 
                                     <td class="text-end pe-4">
+                                        @{
+                                            var rowId = row.ContainsKey("Id") ? row["Id"]?.ToString() : "";
+                                            var rowFolio = row.ContainsKey("Folio") ? row["Folio"]?.ToString() : "";
+                                        }
                                         <div class="btn-group shadow-sm">
-                                            <a class="btn btn-primary" href="/Data/@entity.Name/Edit/@row["Id"]">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            @if (access.CanDelete)
+
+                                            @if (!deletedRow && access.CanUpdate)
                                             {
-                                                <button class="btn btn-danger">
+                                                <a class="btn btn-primary" href="/Data/@entityName/Edit/@rowId">
+                                                    <i class="bi bi-pencil"></i>
+                                                </a>
+                                            }
+
+                                            @if (!deletedRow && access.CanDelete)
+                                            {
+                                                <button class="btn btn-danger" onclick="confirmDelete('@entityName', '@rowId', '@rowFolio')">
                                                     <i class="bi bi-trash"></i>
                                                 </button>
                                             }
@@ -148,17 +238,73 @@
                     </tbody>
                 </table>
             </div>
+
+
+            <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top">
+                
+                @if (Model.EntityMetadata.PageSize > 0)
+                {
+                    <div class="text-muted small">
+                        Tamaño de página: <span class="fw-bold">@Model.EntityMetadata.PageSize</span> registros.
+                    </div>
+                    <nav aria-label="Navegación de páginas">
+                        <ul class="pagination pagination-sm mb-0">
+                            <li class="page-item @(Model.CurrentPage <= 1 ? "disabled" : "")">
+                                <a class="page-link" href="@BuildPageUrl(Model.CurrentPage - 1)">Anterior</a>
+                            </li>
+                            
+                            <li class="page-item active">
+                                <span class="page-link">Página @Model.CurrentPage</span>
+                            </li>
+
+                            @{
+                                int pageSize = Model.EntityMetadata.PageSize;
+                                bool hasNextPage = Model.Data != null && Model.Data.Count() == pageSize;
+                            }
+                            <li class="page-item @(!hasNextPage ? "disabled" : "")">
+                                <a class="page-link" href="@BuildPageUrl(Model.CurrentPage + 1)">Siguiente</a>
+                            </li>
+                        </ul>
+                    </nav>
+                }
+                else
+                {
+                    <div class="text-muted small w-100 text-center py-1">
+                        <i class="bi bi-info-circle me-1 text-primary"></i> 
+                        Vista completa activa: Mostrando todos los registros disponibles (<span class="fw-bold">@Model.Data.Count()</span>).
+                    </div>
+                }
+            </div>
+
+            @* Helper Razor en línea para reconstruir la URL manteniendo los filtros avanzados activos *@
+            @functions {
+                string BuildPageUrl(int targetPage)
+                {
+                    var queryParams = new List<string> { $"page={targetPage}" };
+                    foreach (var filter in Model.CurrentFilters)
+                    {
+                        if (filter.Key != "page" && !string.IsNullOrWhiteSpace(filter.Value))
+                        {
+                            queryParams.Add($"{filter.Key}={Uri.EscapeDataString(filter.Value)}");
+                        }
+                    }
+                    return $"/Data/{Model.EntityMetadata.Name}?" + string.Join("&", queryParams);
+                }
+            }
+
+
+
         </div>
     </div>
 </div>
 
 @section Scripts {
     <script>
-
+        // La sección de Scripts mantiene su comportamiento pero garantizamos que reciba strings limpios
         function confirmDelete(entity, id, folio) {
             Swal.fire({
                 title: '¿Eliminar registro?',
-                text: `Estás por marcar el folio ${folio} como eliminado.`,
+                text: `Estás por marcar el folio ${folio} como eliminado de forma lógica.`,
                 icon: 'warning',
                 showCancelButton: true,
                 confirmButtonColor: '#dc3545',
@@ -166,13 +312,10 @@
                 cancelButtonText: 'Cancelar'
             }).then((result) => {
                 if (result.isConfirmed) {
-                    // Redirección a la acción de borrado lógico
                     window.location.href = `/Data/${entity}/Delete/${id}`;
                 }
             });
         }
-
-
     </script>
 }
 

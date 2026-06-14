@@ -24,6 +24,26 @@
 
 }
 
+@{
+    // Helper para transformar el string "0:Transportista,1:Taller" en un Diccionario de C#
+    Dictionary<int, string> ParseListValues(string? sourceDefinition)
+    {
+        var dictionary = new Dictionary<int, string>();
+        if (string.IsNullOrWhiteSpace(sourceDefinition)) return dictionary;
+
+        var items = sourceDefinition.Split(',');
+        foreach (var item in items)
+        {
+            var parts = item.Split(':');
+            if (parts.Length == 2 && int.TryParse(parts[0], out int key))
+            {
+                dictionary[key] = parts[1];
+            }
+        }
+        return dictionary;
+    }
+}
+
 <!-- En la parte superior de tu DynamicForm.cshtml -->
 <ul class="nav nav-tabs card-header-tabs" id="myTab" role="tablist">
     <li class="nav-item" role="presentation">
@@ -61,13 +81,10 @@
 
 
 
-            <form action="/Data/@Model.EntityMetadata.Name/Save" method="post" id="dynamicForm">
+            <form action="/Data/@Model.EntityMetadata.Name/Save/@recordId" method="post" id="dynamicForm">
                 @Html.AntiForgeryToken() @* Generamos el token de seguridad manualmente *@
 
-                <input type="hidden" name="EntityName" value="@Model.EntityMetadata.Name" />
 
-                <input type="hidden" name="currentRecordId" value="@(Model.RecordData.ContainsKey("Id") ? Model.RecordData["Id"] : Guid.Empty)" />
-            
                 <div class="card shadow">
                     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                         <h5 class="mb-0">
@@ -103,12 +120,12 @@
 
                                         @if(prop.Name.ToUpper().Equals("NAME"))
                                         {
-                                        <label class="form-label fw-bold">@Model.EntityMetadata.NameLabel</label>
+                                        <label class="form-label fw-bold">@Model.EntityMetadata.NameLabel @Html.Raw(prop.IsRequired ? "<span class='text-danger'>*</span>" : "")</label>
 
                                         }
                                         else
                                         {
-                                        <label class="form-label fw-bold">@prop.Label</label>                                    
+                                        <label class="form-label fw-bold">@prop.Label @Html.Raw(prop.IsRequired ? "<span class='text-danger'>*</span>" : "")</label>                                    
                                         }
 
 
@@ -119,6 +136,27 @@
                                         @* Renderizado dinámico según DataTypeId *@
                                         @switch ((PropertyDataType)prop.DataTypeId)
                                         {
+                                            case PropertyDataType.ListValue:
+
+
+                                            var opciones = ParseListValues(prop.SourceDefinition);
+                                            var valorActual = Model.RecordData.ContainsKey(prop.Name) ? Model.RecordData[prop.Name]?.ToString() : "0";
+
+                                            <select name="@prop.Name" class="form-select form-select-sm">
+                                                @foreach (var opcion in opciones)
+                                                {
+                                                    <option value="@opcion.Key" selected="@(valorActual == opcion.Key.ToString())">
+                                                        @opcion.Value
+                                                    </option>
+                                                }
+                                            </select>
+
+
+                                            break;
+
+
+
+
                                             case PropertyDataType.Boolean:
                                             <div class="form-check form-switch mt-2">
                                                     @{
@@ -248,8 +286,10 @@
 </div>
 
 
-<script src="/js/lookup-engine.js" />
-<script src="/js/autocomplete-engine.js" />
+<script src="/js/lookup-engine.js"></script>
+<script src="/js/autocomplete-engine.js" ></script>
+
+
 <script>
 
     function loadAuditTrail(entity, id) {

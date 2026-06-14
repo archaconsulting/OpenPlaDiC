@@ -8,7 +8,7 @@ namespace OpenPlaDiC.Framework
     {
         public Guid Id { get; set; }
         public string? Name { get; set; }
-        public string? Value { get; set; }
+        public object? Value { get; set; }
         public bool Flag { get; set; } = false;
         public int Code { get; set; } = 0;
         public object? Tag { get; set; }
@@ -18,7 +18,7 @@ namespace OpenPlaDiC.Framework
         {
             Id = Guid.Empty;
         }
-        public GlobalItem(string name, string value)
+        public GlobalItem(string name, object value)
         {
             Id = Guid.Empty;
             Name = name;

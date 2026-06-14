@@ -1,0 +1,65 @@
+﻿@model OpenPlaDiC.Core.DTOs.EntitySchemaDto
+@{
+    ViewData["Title"] = "Importador de Esquemas";
+}
+
+<div class="container-fluid mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="bi bi-cpu text-primary"></i> Importador de Esquemas (ALM)</h2>
+        <a class="btn btn-outline-secondary btn-sm" href="/Dynamic/Index">
+            <i class="bi bi-arrow-left"></i> Volver al Panel
+        </a>
+    </div>
+
+    @if (!ViewData.ModelState.IsValid)
+    {
+        <div class="alert alert-danger border-danger bg-danger-subtle text-danger shadow-sm rounded-3 small mb-4" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-x-octagon-fill me-2 fs-5"></i>
+                <div asp-validation-summary="All" class="mb-0 lista-limpia-kernel"></div>
+            </div>
+        </div>
+    }
+
+    <div class="card shadow-sm border-1">
+        <div class="card-header bg-dark text-white py-3">
+            <h5 class="mb-0 small text-uppercase tracking-wider fw-bold">
+                <i class="bi bi-filetype-json me-2"></i> Carga y Despliegue de Estructuras Dinámicas
+            </h5>
+        </div>
+        <div class="card-body p-4 bg-light-subtle">
+            <form asp-action="Import" method="post" enctype="multipart/form-data">
+                @Html.AntiForgeryToken()
+
+                <div class="row align-items-center g-3">
+                    <div class="col-md-8 col-lg-9">
+                        <label for="schemaFile" class="form-label fw-bold text-dark small">Archivo de Configuración de Metadata (.json)</label>
+                        <input type="file" class="form-control border shadow-sm form-control-sm" id="schemaFile" name="schemaFile" accept=".json" required />
+                        <div class="form-text text-muted small mt-2">
+                            <i class="bi bi-info-circle-fill text-primary"></i> 
+                            El motor deserializará las propiedades, inyectará las filas de configuración en el Kernel y esculpirá la tabla física correspondiente en MS SQL Server de forma atómica.
+                        </div>
+                    </div>
+                    <div class="col-md-4 col-lg-3 text-md-end pt-3 pt-md-0">
+                        <button type="submit" class="btn btn-primary btn-sm w-100 py-2 shadow-sm fw-bold">
+                            <i class="bi bi-cloud-arrow-up-fill me-1"></i> Esculpir Estructura
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+    /* Homologación estética interna para que el resumen de errores use la misma fuente y estilo limpio */
+    .lista-limpia-kernel ul {
+        list-style-type: none;
+        padding-left: 0;
+        margin-bottom: 0;
+        font-weight: 600;
+    }
+    .tracking-wider {
+        letter-spacing: 0.5px;
+    }
+</style>

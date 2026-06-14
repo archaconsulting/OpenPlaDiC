@@ -6,49 +6,100 @@ using System.Data;
 using OpenPlaDiC.WebApp.Models;
 using OpenPlaDiC.DAL;
 using OpenPlaDiC.Framework;
+using OpenPlaDiC.Core.Models.DynamicQuery;
 
 
 namespace OpenPlaDiC.WebApp.Controllers
 {
-    [Route("Data/{entityName}")]
+
+    [ApiController]
+    [Route("Data/{entityName}")] // <-- Define la ruta base para TODOS los endpoints de este controlador    
     public class DynamicController : Controller
     {
         private readonly IMetadataService _metadataService;
-        private readonly IDynamicDataService _dataService;
+        private readonly IDynamicDataService _dynamicDataService;
         private readonly IAccessService _accessService;
 
         private readonly AppDbContext _context;
 
         public DynamicController(
             IMetadataService metadataService, 
-            IDynamicDataService dataService, 
+            IDynamicDataService dynamicDataService, 
             IAccessService accessService,
             AppDbContext appDbContext)
         {
             _metadataService = metadataService;
-            _dataService = dataService;
+            _dynamicDataService = dynamicDataService;
             _accessService = accessService;
             _context = appDbContext;
         }
 
-        // Listado Genérico
+
+
+        // En OpenPlaDiC.WebApp/Controllers/DynamicController.cs
+
         [HttpGet]
-        public async Task<IActionResult> Index(string entityName)
+        public async Task<IActionResult> Index(
+            string entityName, 
+            [FromQuery] Dictionary<string, string> search,
+            [FromQuery] int page = 1) // ASP.NET Core bindea esto automáticamente de la URL
         {
-            var entity = await _metadataService.GetEntityByNameAsync(entityName);
-            if (entity == null) return NotFound();
+            if (page < 1) page = 1;
+
+            var user = HttpContext?.User;
+            bool isMaster = user?.HasClaim("IsMaster", "True") ?? false;
+
+            var entityMetadata = await _metadataService.GetEntityMetadataAsync(entityName);
+            if (entityMetadata == null) return NotFound();
 
             var userId = GetCurrentUserId();
-            var access = await _accessService.GetEntityAccessAsync(userId, entity.Id);
+            var access = await _accessService.GetEntityAccessAsync(userId, entityMetadata.Id);
             if (!access.CanRead) return Forbid();
 
-            var response = await _dataService.GetAllAsync(entityName);
-            
-            ViewBag.Entity = entity;
+            var criteria = new HashSet<FilterCriterion>();
+
+            // Interceptamos la Query String basándonos en la metadata de la entidad
+            foreach (EntityProperty prop in entityMetadata.Properties)
+            {
+                // Ejemplo para texto: search[Field_Text]=Juan
+                if (search.TryGetValue(prop.Name, out string? value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    if (prop.DataTypeId == 10) // RelatedEntity
+                    {
+                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Equals, value));
+                    }
+                    else if (prop.DataTypeId == 0)
+                    {
+                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Contains, value));
+                    }
+                }
+                // Rangos para fechas/números: search[Field_Date_From] y search[Field_Date_To]
+                else if (search.TryGetValue($"{prop.Name}_From", out var fromVal) && 
+                        search.TryGetValue($"{prop.Name}_To", out var toVal))
+                {
+                    if (!string.IsNullOrWhiteSpace(fromVal) && !string.IsNullOrWhiteSpace(toVal))
+                    {
+                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Between, fromVal, toVal));
+                    }
+                }
+            }
+
+            // Consumimos el servicio de negocio pasándole los criterios reconstruidos
+            var dataGrid = await _dynamicDataService.GetPagedDataAsync(entityName, criteria,page, isMaster);
+
+            var viewModel = new DynamicIndexViewModel {
+                EntityMetadata = entityMetadata,
+                Data = dataGrid,
+                CurrentFilters = search,
+                CurrentPage = page // Añade esta propiedad a tu ViewModel para controlar los botones Sig/Ant
+            };
+
             ViewBag.Access = access;
-            
-            return View("DynamicIndex", response.Data);
+
+
+            return View("DynamicIndex", viewModel);
         }
+
 
         // Formulario de Edición / Creación
         [HttpGet("Edit/{id?}")]
@@ -69,13 +120,13 @@ namespace OpenPlaDiC.WebApp.Controllers
 
             if (id.HasValue)
             {
-                var recordDataResponse = await _dataService.GetByIdAsync(entityName, id.Value);
+                var recordDataResponse = await _dynamicDataService.GetByIdAsync(entityName, id.Value);
                 recordData = recordDataResponse.Data;
             }
             else
             {
                 // Pasamos la colección de la Query String (ej: ?ClienteId=GUID) al creador de diccionarios
-                var emptyDictResponse = await _dataService.CreateEmptyDictionaryAsync(entity, Request.Query);
+                var emptyDictResponse = await _dynamicDataService.CreateEmptyDictionaryAsync(entity, Request.Query);
                 recordData = emptyDictResponse.Data;
             }
 
@@ -106,9 +157,9 @@ namespace OpenPlaDiC.WebApp.Controllers
         }
 
         // Acción de Guardado (Procesa el Formulario y ejecuta Triggers)
-        [HttpPost("Save")]
+        [HttpPost("Save/{recordId:guid?}")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> SaveRecord(string entityName, Guid recordId, IFormCollection form)
+        public async Task<IActionResult> SaveRecord(string entityName, Guid recordId, [FromForm] IFormCollection form)
         {
             var entity = await _metadataService.GetEntityWithPropertiesAsync(entityName);
             if (entity == null) return NotFound();
@@ -122,7 +173,7 @@ namespace OpenPlaDiC.WebApp.Controllers
             if (!isUpdate && !access.CanCreate) return Forbid();
 
             // Llamada al servicio que construye SQL y ejecuta los Triggers Razor
-            var response = await _dataService.SaveAsync(entityName, recordId, form, entity, userId);
+            var response = await _dynamicDataService.SaveAsync(entityName, recordId, form, entity, userId);
 
             if (response.IsSuccess)
             {
@@ -157,7 +208,7 @@ namespace OpenPlaDiC.WebApp.Controllers
         [HttpGet("Export")]
         public async Task<IActionResult> Export(string entityName)
         {
-            var response = await _dataService.ExportToExcelAsync(entityName);
+            var response = await _dynamicDataService.ExportToExcelAsync(entityName);
             
             if (response.IsSuccess)
             {
@@ -180,7 +231,7 @@ namespace OpenPlaDiC.WebApp.Controllers
             // Validar permiso de borrado
             if (!access.CanDelete) return Forbid();
 
-            var response = await _dataService.DeleteLogicalAsync(entityName, id, userId);
+            var response = await _dynamicDataService.DeleteLogicalAsync(entityName, id, userId);
 
             if (response.IsSuccess)
             {

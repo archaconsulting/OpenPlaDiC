@@ -60,6 +60,7 @@
                                 <th>Nombre SQL</th>
                                 <th>Tipo</th>
                                 <th>Ubicación (R,C)</th>
+                                <th>En lista</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
@@ -74,7 +75,18 @@
       
                                     </td>
                                     <td><span class="badge bg-info">@prop.DataTypeId</span></td>
-                                    <td>@prop.GridRow , @prop.GridColumn</td>
+                                    <td>
+                                        
+                                        @prop.GridRow , @prop.GridColumn
+                                        
+                                        
+                                    </td>
+                                    <td>
+                                        @if(prop.OnList)
+                                        {
+                                            <i class="bi bi-table"></i>
+                                        }
+                                    </td>
                                     
                                     
                                     <td class="text-end">
@@ -82,7 +94,7 @@
 
                                         <!-- Botón Editar Metadata -->
                                         <button type="button" 
-                                                onclick="editProperty('@prop.Id', '@prop.Label', '@prop.GridRow', '@prop.GridColumn', '@prop.IsRequired')" 
+                                                onclick="editProperty('@prop.Id', '@prop.Label', '@prop.GridRow', '@prop.GridColumn', '@prop.IsRequired', '@prop.OnList')" 
                                                 class="btn btn-sm btn-outline-primary" 
                                                 title="Editar configuración">
                                             <i class="bi bi-pencil"></i>
@@ -180,12 +192,22 @@
                         </select>
                     </div>
 
-                    <div class="col-12">
+                    <div class="col-6">
                         <div class="form-check form-switch mt-2">
                             <input class="form-check-input" type="checkbox" name="IsRequired" value="true">
                             <label class="form-check-label">¿Es campo obligatorio?</label>
                         </div>
                     </div>
+
+
+
+                    <div class="col-6">
+                        <div class="form-check form-switch mt-2">
+                            <input class="form-check-input" type="checkbox" name="OnList" value="true">
+                            <label class="form-check-label">¿Incluído en listado?</label>
+                        </div>
+                    </div>
+
                 </div>
             </div>
             <div class="modal-footer">
@@ -232,12 +254,23 @@
                         </select>
                     </div>
 
-                    <div class="col-12">
+                    <div class="col-6">
                         <div class="form-check form-switch mt-2">
                             <input id="editPropRequired" class="form-check-input" type="checkbox" name="IsRequired" value="true">
                             <label class="form-check-label fw-bold">Campo Obligatorio</label>
                         </div>
                     </div>
+
+
+                    <div class="col-6">
+                        <div class="form-check form-switch mt-2">
+                            <input id="editOnList" class="form-check-input" type="checkbox" name="OnList" value="true">
+                            <label class="form-check-label">¿Incluído en listado?</label>
+                        </div>
+                    </div>
+
+
+
                 </div>
             </div>
             <div class="modal-footer border-0">
@@ -346,15 +379,21 @@
     }
 
 
-    function editProperty(id, label, row, col, isRequired) {
+    function editProperty(id, label, row, col, isRequired, onList) {
         // Asignar valores al modal
         $('#editPropId').val(id);
         $('#editPropLabel').val(label);
         $('#editPropRow').val(row);
         $('#editPropCol').val(col);
         
+        
         // Manejo del checkbox (Bootstrap Switch)
         $('#editPropRequired').prop('checked', isRequired === 'True' || isRequired === true);
+
+
+        // Manejo del checkbox (Bootstrap Switch)
+        $('#editOnList').prop('checked', onList === 'True' || onList === true);
+
 
         // Mostrar modal
         var modal = new bootstrap.Modal(document.getElementById('editPropertyModal'));

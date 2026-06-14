@@ -13,5 +13,6 @@ public enum PropertyDataType
         RelatedEntity = 10,
         Boolean = 11,
         Password = 12,
-        Currency = 16
+        Currency = 16,
+        ListValue = 17
     }

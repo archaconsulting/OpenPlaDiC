@@ -39,6 +39,7 @@ namespace OpenPlaDiC.WebApp.Controllers
             var response = await _context.ExecProcAsync("sp_Core_CreateEntity", 
                 new GlobalItem("Name", model.Name),
                 new GlobalItem("Label", model.Label),
+                new GlobalItem("PageSize", model.PageSize.ToString()),
                 new GlobalItem("Prefix", model.Prefix),
                 new GlobalItem("Icon", model.Icon ?? "bi-table"),
                 new GlobalItem("CreatedById", userId.ToString()),
@@ -78,6 +79,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                 new GlobalItem("Label", model.Label),
                 new GlobalItem("GridRow", model.GridRow.ToString()),
                 new GlobalItem("GridColumn", model.GridColumn.ToString()),
+                new GlobalItem("OnList", model.OnList ? "1" : "0"),
                 new GlobalItem("IsRequired", model.IsRequired ? "1" : "0"),
                 new GlobalItem("UpdatedById", userId.ToString())
             );
@@ -110,6 +112,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                 new GlobalItem("GridColumn", prop.GridColumn.ToString()),
                 new GlobalItem("DataTypeId", prop.DataTypeId.ToString()),
                 new GlobalItem("IsRequired", prop.IsRequired ? "1" : "0"),
+                new GlobalItem("OnList", prop.OnList ? "1" : "0"),
                 new GlobalItem("RelatedEntityName", prop.SourceDefinition),                
                 new GlobalItem("CreatedById", userId.ToString())
             );
@@ -199,9 +202,10 @@ namespace OpenPlaDiC.WebApp.Controllers
             // Actualizamos campos de la metadata (Label, Icon, IsAvailable)
             // No permitimos cambiar el Name (SQL) aquí para evitar romper la integridad física
             var respUpdate = await _context.ExecQueryAsync(
-                "UPDATE Entity SET Label = @l, Icon = @i, IsAvailable = @a, UpdatedAt = GETDATE(), UpdatedById = @u WHERE Name = @n",
+                "UPDATE Entity SET Label = @l, Icon = @i, IsAvailable = @a, UpdatedAt = GETDATE(), UpdatedById = @u, PageSize = @p WHERE Name = @n",
                 new GlobalItem("l", model.Label),
                 new GlobalItem("i", model.Icon ?? "bi-table"),
+                new GlobalItem("p", model.PageSize.ToString()),
                 new GlobalItem("a", model.IsAvailable ? "1" : "0"),
                 new GlobalItem("u", userId.ToString()),
                 new GlobalItem("n", model.Name)

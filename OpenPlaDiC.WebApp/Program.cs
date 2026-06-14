@@ -11,7 +11,8 @@ using Microsoft.AspNetCore.HttpOverrides;
 
 using System.Globalization;
 using Microsoft.AspNetCore.Localization;
-using Microsoft.Extensions.Options; // For IOptions<RequestLocalizationOptions>
+using Microsoft.Extensions.Options;
+using OpenPlaDiC.BIZ.Services; // For IOptions<RequestLocalizationOptions>
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -66,6 +67,7 @@ builder.Services.AddScoped<IMetadataService, MetadataService>();
 builder.Services.AddScoped<IDynamicDataService, DynamicDataService>();
 builder.Services.AddScoped<ISystemParameterService, SystemParameterService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddScoped<IEntitySchemaService, EntitySchemaService>();
 
 
 // Registro del servicio Salesforce

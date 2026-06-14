@@ -40,6 +40,7 @@
                         <h5 class="card-title mt-3 fw-bold">@entity.Label</h5>
                         <p class="card-text text-muted small">
                             Tabla SQL: <code>@entity.Name</code><br />
+                            Paginación: <span class="text-primary">@(entity.PageSize == 0 ? "Sin paginación" : entity.PageSize.ToString()+" registros" )</span><br />
                             Folio: <span class="fw-bold">@entity.Prefix-000</span>
                         </p>
                     </div>
@@ -89,6 +90,26 @@
                     <input id="editEntAvailable" class="form-check-input" type="checkbox" name="IsAvailable" value="true">
                     <label class="form-check-label">Entidad Disponible para Usuarios</label>
                 </div>
+
+
+                <hr />
+            
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Tamaño de página</label>
+                    <select class="form-select" name="PageSize">
+                        <option value="0" selected>Sin paginación</option>
+                        <option value="20">20</option>
+                        <option value="100">100</option>
+                        <option value="200">200</option>
+                        <option value="1000">1000</option>
+                    </select>
+
+                </div>
+
+                
+
+
+
             </div>
             <div class="modal-footer">
                 <button type="submit" class="btn btn-primary">Guardar Cambios</button>
@@ -135,6 +156,25 @@
                     </div>
 
                 </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Tamaño de página</label>
+                        <select class="form-select" name="PageSize">
+                            <option value="0" selected>Sin paginación</option>
+                            <option value="20">20</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                            <option value="1000">1000</option>
+                        </select>
+
+                    </div>
+
+                </div>
+
+
+
+
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
