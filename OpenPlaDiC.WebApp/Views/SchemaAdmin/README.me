@@ -1,0 +1,58 @@
+***
+
+# 🛠️ OpenPlaDiC - Motor de Replicación de Estructuras Dinámicas (ALM)
+
+Este módulo permite a los administradores del sistema y a modelos de Inteligencia Artificial (IA) diseñar, exportar e importar estructuras de entidades dinámicas completas sin necesidad de escribir código C# ni scripts manuales de SQL Server. Al cargar un archivo `.json` válido en la interfaz de **Importación de Esquemas**, el Kernel procesa la metadata y esculpe físicamente las tablas y columnas en la base de datos de forma atómica.
+
+---
+
+## 📄 Estructura del Contrato JSON (Specification Contract)
+
+Cada archivo de esquema debe cumplir estrictamente con el contrato del DTO `EntitySchemaDto` y mapear los tipos de datos nativos soportados por el motor a través de sus identificadores numéricos (`DataTypeId`).
+
+### 1. Diccionario de Tipos de Datos del Kernel (`DataTypeId`)
+Al construir el archivo JSON, utiliza el entero correspondiente según el tipo de columna requerido en la base de datos física:
+
+| ID (`DataTypeId`) | Nombre en Kernel | Tipo Físico en SQL Server | Propósito / Uso en UI |
+|-------------------|------------------|---------------------------|-----------------------|
+| **0** | `String`         | `NVARCHAR(120)`           | Campos de texto estándar corto (Nombres, códigos). |
+| **1** | `Integer`        | `INT`                     | Cantidades enteras, contadores, folios numéricos. |
+| **2** | `Numeric`        | `NUMERIC(15,4)`           | Importes monetarios, precios, costos, tasas decimales. |
+| **3** | `Date`           | `DATE`                    | Fechas puras de operación sin hora. |
+| **7** | `LongText`       | `NVARCHAR(MAX)`           | Comentarios extensos, descripciones, texto enriquecido. |
+| **10** | `RelatedId`      | `UNIQUEIDENTIFIER`        | Clave Foránea (FK) dirigida a otra Entidad del Kernel. |
+| **11** | `Boolean`        | `BIT`                     | Interruptores binarios (Sí/No, Activo/Inactivo). |
+| **12** | `Password`       | `NVARCHAR(MAX)`           | Campos protegidos para almacenamiento seguro de contraseñas. |
+| **17** | `ListValue`      | `INT`                     | Catálogo estático indexado (Enum) renderizado como `<select>`. |
+| **103** | `DateTime`       | `DATETIME2`               | Marcas de tiempo precisas con hora, minutos y segundos. |
+
+---
+
+## 📐 Plantilla JSON Base Comentada (Blueprint)
+
+Utiliza la siguiente estructura como mapa de referencia para construir tus archivos de migración:
+
+```json
+{
+  "name": "NombreFisicoTabla",       // Debe ser alfanumérico, sin espacios (ej: 'Vehiculo')
+  "label": "Etiqueta Legible en UI", // Título público en grids y menús (ej: 'Unidades de Reparto')
+  "prefix": "ABC",                   // Prefijo de 3 a 5 letras para folios autogenerados (ej: 'VEH')
+  "icon": "bi-icon-name",            // Icono nativo de Bootstrap Icons (ej: 'bi-truck')
+  "pageSize": 10,                    // Tamaño de paginación en Grid. (0 = Desactivada, >0 = Límite físico)
+  "useNameField": true,              // Define si la tabla heredará la columna estándar de identificación
+  "nameLabel": "Etiqueta de Name",   // Nombre que tomará el campo estándar 'Name' (ej: 'Placas')
+  "properties": [                    // Colección de columnas dinámicas que se esculpirán
+    {
+      "name": "NombreColumnaFisica", // Nombre técnico de la columna en SQL Server
+      "label": "Etiqueta Campo",     // Texto que se mostrará arriba del input de captura
+      "dataTypeId": 0,               // ID numérico tomado del Diccionario de Tipos de Datos
+      "sourceDefinition": null,      // Configuración extendida (Requerido para Tipo 10 y 17)
+      "isRequired": true,            // true = NOT NULL (Genera valores por defecto del sistema si aplica)
+      "isUnique": false,             // true = Crea un índice único (UX_) e impide duplicados
+      "isIndexed": true,             // true = Crea un índice tradicional (IX_) para optimizar búsquedas
+      "gridRow": 1,                  // Fila en la que se posicionará el input dentro del formulario layout
+      "gridColumn": 1,               // Columna (Bootstrap grid) para maquetación asimétrica
+      "onList": true                 // true = La propiedad se renderizará como cabecera en el Grid principal
+    }
+  ]
+}
