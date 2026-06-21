@@ -321,8 +321,8 @@ BEGIN
         -- 2. Insertar en la tabla maestra de Metadata
         DECLARE @EntityId UNIQUEIDENTIFIER = NEWID();
         
-        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, IsAvailable, IsSystem, CreatedAt, CreatedById, UseNameField, PageSize)
-        VALUES (@EntityId, @Name, @Label, @Prefix, @Icon, 1, 0, GETDATE(), @CreatedById, @UseNameField, @PageSize);
+        INSERT INTO Entity (Id, Name, Label, Prefix, Icon, IsAvailable, IsSystem, CreatedAt, CreatedById, UseNameField, NameLabel, PageSize)
+        VALUES (@EntityId, @Name, @Label, @Prefix, @Icon, 1, 0, GETDATE(), @CreatedById, @UseNameField, @NameLabel, @PageSize);
 
         -- 3. Crear la TABLA FÍSICA con sus columnas base del Kernel
         DECLARE @Sql NVARCHAR(MAX);
@@ -347,8 +347,8 @@ BEGIN
         -- Dentro de sp_Core_CreateEntity, después de crear la tabla física:
         IF @UseNameField = 1
         BEGIN
-            INSERT INTO EntityProperty (Id, EntityId, Name, Label, DataTypeId, GridRow, GridColumn, IsRequired, IsVisible, IsEditable, Sequence, CreatedById)
-            VALUES (NEWID(), @EntityId, 'Name', @NameLabel, 1, 1, 1, 1, 1, 1, 0, @CreatedById);
+            INSERT INTO EntityProperty (Id, EntityId, Name, Label, DataTypeId, GridRow, GridColumn, IsRequired, IsVisible, IsEditable, Sequence, CreatedById, OnList)
+            VALUES (NEWID(), @EntityId, 'Name', @NameLabel, 1, 1, 1, 1, 1, 1, 0, @CreatedById,1);
         END
 
 

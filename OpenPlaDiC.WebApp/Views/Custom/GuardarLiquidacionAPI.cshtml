@@ -1,0 +1,142 @@
+@using System.Text.Json
+@using System.Data
+@using Microsoft.EntityFrameworkCore
+@using OpenPlaDiC.Framework
+@using OpenPlaDiC.Core.Models
+@using OpenPlaDiC.DAL
+@inject OpenPlaDiC.DAL.AppDbContext DbContext
+@model List<OpenPlaDiC.Framework.GlobalItem>
+
+@{
+    // Forzamos que la respuesta del despachador unificado sea JSON limpio
+    Context.Response.ContentType = "application/json";
+
+    var response = new Response<string> { IsSuccess = false, Data = "" };
+    var userIdClaim = User.FindFirst("UserId")?.Value ?? Guid.Empty.ToString();
+    Guid userId = Guid.Parse(userIdClaim);
+
+    try
+    {
+        // 1. Desempaquetar y castear explícitamente a string usando .ToString() o el operador 'as'
+        var vehiculoIdRaw = Model.FirstOrDefault(p => p.Name == "VehiculoId")?.Value?.ToString();
+        var liquidacionIdRaw = Model.FirstOrDefault(p => p.Name == "LiquidacionId")?.Value?.ToString();
+        var fechaRaw = Model.FirstOrDefault(p => p.Name == "Fecha")?.Value?.ToString();
+        var totalServicioRaw = Model.FirstOrDefault(p => p.Name == "TotalServicio")?.Value?.ToString();
+        var detallesJson = Model.FirstOrDefault(p => p.Name == "DetallesJson")?.Value?.ToString();
+
+        // ⚡ AHORA SÍ: Las variables son 'string?', por lo que string.IsNullOrEmpty compilará sin errores
+        if (string.IsNullOrEmpty(vehiculoIdRaw) || string.IsNullOrEmpty(fechaRaw) || string.IsNullOrEmpty(detallesJson))
+        {
+            response.Message = "Faltan parámetros críticos para consolidar la liquidación.";
+            @Html.Raw(JsonSerializer.Serialize(response))
+            return;
+        }
+
+        Guid vehiculoId = Guid.Parse(vehiculoIdRaw);
+        Guid liquidacionId = Guid.TryParse(liquidacionIdRaw, out Guid lId) ? lId : Guid.Empty;
+        decimal totalServicio = Convert.ToDecimal(totalServicioRaw);
+
+        // Deserializar el desglose de conceptos capturados en la tarjeta
+        var conceptos = JsonSerializer.Deserialize<List<ConceptoCapturaDto>>(detallesJson);
+
+        // 2. APERTURA DEL PIPELINE TRANSACCIONAL SEGURO (Dapper / EF Core Base)
+        using (var transaction = await DbContext.Database.BeginTransactionAsync())
+        {
+            try
+            {
+                bool isUpdate = liquidacionId != Guid.Empty;
+
+                if (isUpdate)
+                {
+                    // LÓGICA DE ACTUALIZACIÓN:
+                    // A. Actualizar el gran total en el encabezado
+                    string sqlUpdateHead = "UPDATE LiquidacionFlete SET TotalServicio = @Total, Status = 1, UpdatedAt = GETDATE(), UpdatedById = @User WHERE Id = @Id";
+                    await DbContext.ExecQueryAsync(sqlUpdateHead, 
+                        new GlobalItem("Total", totalServicio.ToString()),
+                        new GlobalItem("User", userId.ToString()),
+                        new GlobalItem("Id", liquidacionId.ToString())
+                    );
+
+                    // B. Limpieza de detalles viejos (Estrategia Re-Insert para evitar deltas complejos)
+                    string sqlCleanDetails = "DELETE FROM LiquidacionDetalle WHERE LiquidacionId = @Id";
+                    await DbContext.ExecQueryAsync(sqlCleanDetails, new GlobalItem("Id", liquidacionId.ToString()));
+                }
+                else
+                {
+                    // LÓGICA DE INSERCIÓN NUEVA:
+                    liquidacionId = Guid.NewGuid();
+
+                    string sqlInsertHead = "INSERT INTO LiquidacionFlete (Id, Name, Fecha, VehiculoId, TotalServicio, Status, CreatedById) " +
+                                           "VALUES (@Id, @Name, @Fecha, @VehiculoId, @Total, 1, @User)";
+                    
+                    // Generamos un Folio/Código visual único temporal basado en timestamp
+                    string codigoLiquidacion = "LIQ-" + DateTime.Now.ToString("yyMMddHHmmss");
+
+                    await DbContext.ExecQueryAsync(sqlInsertHead,
+                        new GlobalItem("Id", liquidacionId.ToString()),
+                        new GlobalItem("Name", codigoLiquidacion),
+                        new GlobalItem("Fecha", fechaRaw),
+                        new GlobalItem("VehiculoId", vehiculoId.ToString()),
+                        new GlobalItem("Total", totalServicio.ToString()),
+                        new GlobalItem("User", userId.ToString())
+                    );
+                }
+
+                // 3. PERSISTENCIA ATÓMICA DE LOS DETALLES CONCEPTUALES
+                if (conceptos != null && conceptos.Count > 0)
+                {
+                    string sqlInsertDetail = "INSERT INTO LiquidacionDetalle (Id, LiquidacionId, ConceptoId, PrecioUnitario, Cantidad, Importe, CreatedById) " +
+                                             "VALUES (@Id, @LiquidacionId, @ConceptoId, @Precio, @Cantidad, @Importe, @User)";
+
+                    foreach (var cp in conceptos)
+                    {
+                        Guid detalleId = Guid.NewGuid();
+                        await DbContext.ExecQueryAsync(sqlInsertDetail,
+                            new GlobalItem("Id", detalleId.ToString()),
+                            new GlobalItem("LiquidacionId", liquidacionId.ToString()),
+                            new GlobalItem("ConceptoId", cp.ConceptoId.ToString()),
+                            new GlobalItem("Precio", cp.PrecioUnitario.ToString()),
+                            new GlobalItem("Cantidad", cp.Cantidad.ToString()),
+                            new GlobalItem("Importe", cp.Importe.ToString()),
+                            new GlobalItem("User", userId.ToString())
+                        );
+                    }
+                }
+
+                // Si todo el grafo relacional se grabó correctamente en SQL Server, consolidamos
+                await transaction.CommitAsync();
+
+                response.IsSuccess = true;
+                response.Message = isUpdate 
+                    ? "La liquidación ha sido recalculada y actualizada con éxito." 
+                    : "Flete guardado y confirmado correctamente en el histórico.";
+            }
+            catch (Exception exInner)
+            {
+                // En caso de colisión o fallo de red en Ubuntu, revertimos todo al estado inicial
+                await transaction.RollbackAsync();
+                response.Message = "Fallo en el pipeline interno: " + exInner.Message;
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        response.IsSuccess = false;
+        response.IsException = true;
+        response.Message = "Excepción crítica en el Kernel API: " + ex.Message;
+    }
+
+    // Escupimos el JSON estructurado devuelto al cliente AJAX
+    @Html.Raw(JsonSerializer.Serialize(response))
+}
+
+@functions {
+    // DTO Estructural de Deserialización Rápida en Memoria
+    public class ConceptoCapturaDto
+    {
+        public Guid ConceptoId { get; set; }
+        public decimal PrecioUnitario { get; set; }
+        public decimal Cantidad { get; set; }
+        public decimal Importe { get; set; }
+    }
+}

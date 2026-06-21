@@ -1,0 +1,319 @@
+@* ⚡ CORE OPENPLADIC: Importación y alineación estricta de Namespaces del Kernel *@
+@using System.Data
+@using System.Dynamic
+@using OpenPlaDiC.Core.Models
+@using OpenPlaDiC.Framework
+@using OpenPlaDiC.BIZ
+@inject IDynamicDataService DynamicDataService
+
+@* Definición formal del Modelo de Parámetros de Entrada (QueryString Mapeada) *@
+@model List<OpenPlaDiC.Framework.GlobalItem>
+
+@{
+    // 1. Extraer de forma segura el parámetro de fecha enviado por el CustomController
+    var fechaParam = Model.FirstOrDefault(p => p.Name == "fecha")?.Value?.ToString();
+    DateTime fechaFiltro = DateTime.Today;
+    
+    if (!string.IsNullOrEmpty(fechaParam) && DateTime.TryParse(fechaParam, out DateTime fechaParsed))
+    {
+        fechaFiltro = fechaParsed;
+    }
+
+    // Formateadores estéticos para la cabecera operativa del portal
+    string fechaISO = fechaFiltro.ToString("yyyy-MM-dd");
+    string fechaLarga = fechaFiltro.ToString("ddddd, dd 'de' MMMM 'de' yyyy", new System.Globalization.CultureInfo("es-MX"));
+
+    // ⚡ CONEXIÓN NATIVA: Consumo de los DataTables oficiales de tu Kernel a través de GetAllAsync
+    var resVehiculos = await DynamicDataService.GetAllAsync("Vehiculo", allFields: true);
+    var resConceptos = await DynamicDataService.GetAllAsync("ConceptoFlete", allFields: true);
+    var resLiquidaciones = await DynamicDataService.GetAllAsync("LiquidacionFlete", allFields: true);
+    var resDetalles = await DynamicDataService.GetAllAsync("LiquidacionDetalle", allFields: true);
+
+    // Desempaquetamos de forma defensiva las tablas físicas de SQL Server
+    DataTable dtVehiculos = resVehiculos.IsSuccess ? resVehiculos.Data : new DataTable();
+    DataTable dtConceptos = resConceptos.IsSuccess ? resConceptos.Data : new DataTable();
+    DataTable dtLiquidaciones = resLiquidaciones.IsSuccess ? resLiquidaciones.Data : new DataTable();
+    DataTable dtDetalles = resDetalles.IsSuccess ? resDetalles.Data : new DataTable();
+}
+
+<div class="container-fluid mt-4">
+    <div class="d-flex align-items-center mb-4 bg-white p-3 rounded shadow-sm border">
+        <div class="btn-group shadow-sm me-3">
+            <button type="button" class="btn btn-dark btn-sm" onclick="navegarDias(-1)">
+                <i class="bi bi-chevron-left"></i>
+            </button>
+            <span class="btn btn-light btn-sm fw-bold disabled border-dark text-dark px-4 text-capitalize">
+                <i class="bi bi-calendar-event text-primary me-2"></i> @fechaLarga
+            </span>
+            <button type="button" class="btn btn-dark btn-sm" onclick="navegarDias(1)">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+        </div>
+        <input type="date" id="fechaMatrizInput" value="@fechaISO" class="form-control form-control-sm border shadow-sm w-auto d-none d-md-block" onchange="irAFechaEspecifica(this.value)" />
+    </div>
+
+    <div class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-4">
+        @foreach (DataRow vehiculo in dtVehiculos.Rows)
+        {
+            // Filtro defensivo: Validar que el camión esté activo y no esté borrado
+            if (vehiculo["EstaActivo"] != DBNull.Value && Convert.ToInt32(vehiculo["EstaActivo"]) == 0) continue;
+            if (vehiculo["IsDeleted"] != DBNull.Value && Convert.ToBoolean(vehiculo["IsDeleted"])) continue;
+
+            var vehiculoId = vehiculo["Id"].ToString();
+            var placas = vehiculo["Name"].ToString(); // Campo Name estándar del Kernel (Placas)
+            var chofer = vehiculo["Chofer"].ToString();
+
+            // Buscar si este camión ya tiene un encabezado de liquidación guardado para la fecha seleccionada
+            DataRow? liqEncabezado = dtLiquidaciones.AsEnumerable().FirstOrDefault(l => 
+                l["IsDeleted"].ToString() == "False" &&
+                l["VehiculoId"].ToString() == vehiculoId && 
+                Convert.ToDateTime(l["Fecha"]).ToString("yyyy-MM-dd") == fechaISO
+            );
+
+            string liquidacionId = liqEncabezado != null ? liqEncabezado["Id"].ToString() : Guid.Empty.ToString();
+            int status = liqEncabezado != null ? Convert.ToInt32(liqEncabezado["Status"]) : 0; // 0: PENDIENTE, 1: CONFIRMADO
+            decimal totalServicio = liqEncabezado != null ? Convert.ToDecimal(liqEncabezado["TotalServicio"]) : 0.00m;
+            bool esConfirmado = status == 1;
+
+            <div class="col" id="tarjeta-@vehiculoId">
+                <div class="card shadow-sm h-100 border-2 @(esConfirmado ? "border-success" : "border-light-subtle") rounded-3 overflow-hidden">
+                    <div class="card-body p-4 position-relative">
+                        
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <small class="text-muted d-block text-truncate font-monospace" style="max-width: 190px;">
+                                    <i class="bi bi-person-badge"></i> @chofer
+                                </small>
+                                <h3 class="text-danger fw-bold mb-0 tracking-tight">@placas</h3>
+                            </div>
+                            
+                            <div class="status-badge-container">
+                                @if (esConfirmado)
+                                {
+                                    <span class="badge bg-success py-2 px-3 rounded-2 shadow-sm border border-success">
+                                        <i class="bi bi-check-circle-fill me-1"></i> Confirmado
+                                    </span>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-success btn-sm px-3 fw-bold shadow-sm rounded-2" 
+                                            onclick="procesarConfirmacionMatriz('@vehiculoId', '@liquidacionId')">
+                                        <i class="bi bi-shield-check me-1"></i> Confirmar
+                                    </button>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <span class="badge bg-light text-secondary border small py-1">
+                                <i class="bi bi-truck-flatbed"></i> Transporte Logístico
+                            </span>
+                        </div>
+
+                        <div class="table-responsive mt-3">
+                            <table class="table table-sm align-middle table-borderless mb-0">
+                                <thead>
+                                    <tr class="text-muted small border-bottom">
+                                        <th style="width: 45%;">Concepto</th>
+                                        <th class="text-center" style="width: 30%;">Cantidad</th>
+                                        <th class="text-end" style="width: 25%;">Importe</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (DataRow cp in dtConceptos.Rows)
+                                    {
+                                        // Filtro administrativo: Solo conceptos activos y vigentes
+                                        if (cp["EstaActivo"] != DBNull.Value && Convert.ToInt32(cp["EstaActivo"]) == 0) continue;
+                                        if (cp["IsDeleted"] != DBNull.Value && Convert.ToBoolean(cp["IsDeleted"])) continue;
+
+                                        var conceptoId = cp["Id"].ToString();
+                                        var conceptoName = cp["Name"].ToString();
+                                        decimal costoBase = Convert.ToDecimal(cp["Costo"]);
+                                        bool sumaAlTotal = Convert.ToBoolean(cp["SumaAlTotal"]);
+
+                                        // Cruzar en memoria contra la tabla de detalles físicos de SQL Server
+                                        DataRow? det = dtDetalles.AsEnumerable().FirstOrDefault(d => 
+                                            d["IsDeleted"].ToString() == "False" &&
+                                            d["LiquidacionId"].ToString() == liquidacionId && 
+                                            d["ConceptoId"].ToString() == conceptoId
+                                        );
+
+                                        decimal cantidad = det != null ? Convert.ToDecimal(det["Cantidad"]) : 0.00m;
+                                        decimal importe = det != null ? Convert.ToDecimal(det["Importe"]) : 0.00m;
+
+                                        <tr class="row-concepto-flete" 
+                                            data-concepto-id="@conceptoId" 
+                                            data-costo-base="@costoBase" 
+                                            data-suma-total="@(sumaAlTotal ? "true" : "false")">
+                                            
+                                            <td class="small fw-semibold text-secondary text-truncate" title="@conceptoName">@conceptoName</td>
+                                            <td>
+                                                <div class="d-flex justify-content-center align-items-center">
+                                                    <button class="btn btn-outline-danger btn-xs py-0 px-2 fw-bold rounded-1 shadow-sm" 
+                                                            type="button"
+                                                            onclick="alterarPorBoton(this, -1)" @(esConfirmado ? "disabled" : "")>-</button>
+                                                    
+                                                    <input type="number" 
+                                                           class="form-control form-control-sm text-center mx-2 font-monospace cantidad-input text-primary fw-bold border-0 bg-transparent p-0" 
+                                                           value="@cantidad.ToString("0.00")" 
+                                                           step="1" 
+                                                           min="0" 
+                                                           style="width: 55px; font-size: 0.875rem;" 
+                                                           oninput="calcularFilaPorEntradaManual(this)"
+                                                           @(esConfirmado ? "disabled" : "") />
+                                                    
+                                                    <button class="btn btn-outline-success btn-xs py-0 px-2 fw-bold rounded-1 shadow-sm" 
+                                                            type="button"
+                                                            onclick="alterarPorBoton(this, 1)" @(esConfirmado ? "disabled" : "")>+</button>
+                                                </div>
+                                            </td>
+                                            <td class="text-end font-monospace small fw-bold text-dark importe-display">@importe.ToString("0.00")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                            <h4 class="mb-0 text-muted fs-6">Total del Servicio:</h4>
+                            <span class="fs-4 font-monospace fw-bold text-dark gran-total-display">@totalServicio.ToString("0.00")</span>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .btn-xs { padding: 1px 5px; font-size: 0.75rem; }
+    .tracking-tight { letter-spacing: -0.5px; }
+    .font-monospace { font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace !important; }
+
+    /* Ocultar flechas de control nativas de inputs numéricos para estética limpia */
+    .cantidad-input::-webkit-outer-spin-button,
+    .cantidad-input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+    .cantidad-input[type=number] {
+        -moz-appearance: textfield;
+    }
+</style>
+
+<script>
+    function irAFechaEspecifica(fechaStr) {
+        window.location.href = '/Custom/MatrizLiquidacion?fecha=' + fechaStr;
+    }
+
+    function navegarDias(factor) {
+        let input = document.getElementById('fechaMatrizInput');
+        let fechaActual = new Date(input.value + 'T00:00:00');
+        fechaActual.setDate(fechaActual.getDate() + factor);
+        
+        let yyyy = fechaActual.getFullYear();
+        let mm = String(fechaActual.getMonth() + 1).padStart(2, '0');
+        let dd = String(fechaActual.getDate()).padStart(2, '0');
+        irAFechaEspecifica(`${yyyy}-${mm}-${dd}`);
+    }
+
+    // 1. Manejo cuando se presiona un botón físico (+ o -)
+    function alterarPorBoton(boton, factor) {
+        let divContenedor = boton.closest('.d-flex');
+        let inputCantidad = divContenedor.querySelector('.cantidad-input');
+        
+        let cantidadActual = parseFloat(inputCantidad.value) || 0;
+        let nuevaCantidad = Math.max(0, cantidadActual + factor); // Bloqueo de negativos
+        
+        inputCantidad.value = nuevaCantidad.toFixed(2);
+        
+        let fila = boton.closest('.row-concepto-flete');
+        ejecutarCalculoFinancieroFila(fila);
+    }
+
+    // 2. Manejo reactivo instantáneo cuando el usuario escribe desde el teclado
+    function calcularFilaPorEntradaManual(input) {
+        if (input.value === "") return; // Ignorar nulos temporales mientras teclea
+        
+        let cantidad = parseFloat(input.value);
+        if (cantidad < 0) input.value = "0.00"; // Corrección defensiva instantánea
+        
+        let fila = input.closest('.row-concepto-flete');
+        ejecutarCalculoFinancieroFila(fila);
+    }
+
+    // 3. El Motor de Cálculo Unificado (Single Source of Truth)
+    function ejecutarCalculoFinancieroFila(fila) {
+        let tarjeta = fila.closest('.card-body');
+        let costoUnitario = parseFloat(fila.getAttribute('data-costo-base')) || 0;
+        let inputCantidad = fila.querySelector('.cantidad-input');
+        let tdImporte = fila.querySelector('.importe-display');
+        
+        let cantidad = parseFloat(inputCantidad.value) || 0;
+        
+        let nuevoImporte = cantidad * costoUnitario;
+        tdImporte.innerText = nuevoImporte.toFixed(2);
+        
+        recalcularTarjetaCompleta(tarjeta);
+    }
+
+    function recalcularTarjetaCompleta(tarjeta) {
+        let acumuladoTotal = 0;
+        let filas = tarjeta.querySelectorAll('.row-concepto-flete');
+        
+        filas.forEach(f => {
+            let sumaAlTotal = f.getAttribute('data-suma-total') === 'true';
+            if (sumaAlTotal) {
+                let importeFila = parseFloat(f.querySelector('.importe-display').innerText);
+                acumuladoTotal += importeFila;
+            }
+        });
+        
+        tarjeta.querySelector('.gran-total-display').innerText = acumuladoTotal.toFixed(2);
+    }
+
+    // PIPELINE DE PERSISTENCIA ATÓMICA SINCRONIZADO CON APISERVICE DEL SITE.JS
+    function procesarConfirmacionMatriz(vehiculoId, liquidacionId) {
+        let tarjeta = document.getElementById(`tarjeta-${vehiculoId}`);
+        let filas = tarjeta.querySelectorAll('.row-concepto-flete');
+        let totalServicio = parseFloat(tarjeta.querySelector('.gran-total-display').innerText);
+        let fechaOperacion = document.getElementById('fechaMatrizInput').value;
+
+        let conceptosPayload = [];
+        filas.forEach(f => {
+            let cantidad = parseFloat(f.querySelector('.cantidad-input').value) || 0;
+            if (cantidad > 0) {
+                conceptosPayload.push({
+                    ConceptoId: f.getAttribute('data-concepto-id'),
+                    PrecioUnitario: parseFloat(f.getAttribute('data-costo-base')),
+                    Cantidad: cantidad,
+                    Importe: parseFloat(f.querySelector('.importe-display').innerText)
+                });
+            }
+        });
+
+        // Empaquetado polimórfico compatible con el despachador del Kernel
+        let camposMicroservicio = [
+            { Name: "VehiculoId", Value: vehiculoId },
+            { Name: "LiquidacionId", Value: liquidacionId },
+            { Name: "Fecha", Value: fechaOperacion },
+            { Name: "TotalServicio", Value: totalServicio.toString() },
+            { Name: "DetallesJson", Value: JSON.stringify(conceptosPayload) }
+        ];
+
+        if (typeof APIService !== 'undefined') {
+            APIService.exec("GuardarLiquidacionAPI", camposMicroservicio, function (response) {
+                if (response.isSuccess) {
+                    OpenPlaDiC.UI.showToast(response.message || "Liquidación confirmada con éxito.").then(() => {
+                        location.reload(); // Congela los inputs a modo lectura al persistir
+                    });
+                } else {
+                    OpenPlaDiC.UI.showError("Kernel Exception", response.message);
+                }
+            });
+        } else {
+            alert("Error de infraestructura: No se detectó la librería APIService core en site.js.");
+        }
+    }
+</script>
