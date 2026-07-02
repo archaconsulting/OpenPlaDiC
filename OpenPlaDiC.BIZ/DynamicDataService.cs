@@ -222,7 +222,22 @@ public class DynamicDataService : IDynamicDataService
         // Recorrer las propiedades y validar tipos básicos antes de compilar el SQL
         foreach (var prop in entity.Properties)
         {
-            if (!form.ContainsKey(prop.Name)) continue;
+            
+            //// Implementación previa
+            //if (!form.ContainsKey(prop.Name)) continue;
+
+            // ⚡ MODIFICACIÓN CRÍTICA PARA BOOLEANOS APAGADOS:
+            // Si el campo NO viene en el formulario, pero en la metadata sabemos que es Booleano (DataTypeId == 3)
+            // entonces forzamos su inserción en el diccionario como 0 (false).
+            if (!form.ContainsKey(prop.Name))
+            {
+                if (prop.DataTypeId == 11) // Supongamos que 3 es Boolean/Switch en tu Kernel
+                {
+                    dict[prop.Name] = false; // Forzamos el false en SQL Server
+                }
+                continue; // Para cualquier otro tipo de campo, sí continuamos el ciclo normalmente
+            }
+
 
             string rawValue = form[prop.Name].ToString();
 
