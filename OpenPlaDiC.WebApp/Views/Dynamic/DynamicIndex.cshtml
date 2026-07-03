@@ -57,7 +57,7 @@
                                 var currentValue = Model.CurrentFilters.ContainsKey(prop.Name) ? Model.CurrentFilters[prop.Name] : "";
                                 <select name="@prop.Name" class="form-select form-select-sm">
                                     <option value="">-- Todos --</option>
-                                    @* Los <option> se cargan dinámicamente según el SourceDefinition *@
+                                    @* Los <option> se cargan dinámicamente según el SourceDefinition o inputs *@
                                 </select>
                             }
                             else if (prop.DataTypeId == 3 || prop.DataTypeId == 4) // Numérico o Fecha (Rango)
@@ -97,7 +97,7 @@
             <p class="text-muted small mb-0">Gestión de registros para la entidad: <code>@entityName</code></p>
         </div>
         <div class="d-flex gap-2">
-            <a class="btn btn-sm btn-outline-success d-flex align-items-center gap-1">
+            <a href="/Data/@entityName/Export" class="btn btn-sm btn-outline-success d-flex align-items-center gap-1">
                 <i class="bi bi-file-earmark-excel"></i> Exportar Excel
             </a>
 
@@ -159,10 +159,11 @@
                             {
                                 <tr>
                                     <td class="ps-4">
-                                        @* Regla Nro 3: Blindaje contra nulos y ausencias estructurales de columnas antiguas *@
+                                        @* Regla Nro 3: Blindaje contra nulos y ausencias estructurales *@
                                         @{ var folioVal = row.ContainsKey("Folio") ? row["Folio"]?.ToString() : "-"; }
-
-                                        @{ bool deletedRow = Convert.ToBoolean(row["IsDeleted"]); }
+                                        
+                                        @* Control seguro para IsDeleted (si el CTE o ListQuery expone el flag físico) *@
+                                        @{ bool deletedRow = row.ContainsKey("IsDeleted") && Convert.ToBoolean(row["IsDeleted"]); }
 
                                         <span class="badge @( deletedRow ? "bg-secondary text-light": "bg-light text-primary")  border fw-bold">@folioVal</span>
                                     </td>
@@ -172,23 +173,23 @@
                                         if (prop.OnList == true)
                                         {
                                             <td>
-                                                @if (row.ContainsKey(prop.Name) && row[prop.Name] != null)
+                                                @if (row.ContainsKey(prop.Name) && row[prop.Name] != null && row[prop.Name] != DBNull.Value)
                                                 {
                                                     var rawVal = row[prop.Name];
 
-                                                    if (prop.DataTypeId == 2 || rawVal is bool) // Tipo Booleano / Switch
+                                                    if (prop.DataTypeId == 2 || prop.DataTypeId == 3 || rawVal is bool) // Tipo Booleano / Switch o Bits
                                                     {
-                                                        var isChecked = Convert.ToBoolean(rawVal);
+                                                        var isChecked = rawVal.ToString() == "1" || rawVal.ToString().ToLower() == "true";
                                                         <i class="bi @(isChecked ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
                                                     }
-                                                    else if (prop.DataTypeId == 4) // Tipo Fecha
+                                                    else if (prop.DataTypeId == 4) // Tipo Fecha / DateTime
                                                     {
                                                         @Convert.ToDateTime(rawVal).ToString("dd/MM/yyyy HH:mm")
                                                     }
-                                                    else if (prop.DataTypeId == 17)
+                                                    else if (prop.DataTypeId == 17) // Listas Estáticas de Definición por comas
                                                     {
                                                         var opciones = ParseListValues(prop.SourceDefinition);
-                                                        if (row.ContainsKey(prop.Name) && int.TryParse(row[prop.Name]?.ToString(), out int intKey) && opciones.ContainsKey(intKey))
+                                                        if (int.TryParse(rawVal?.ToString(), out int intKey) && opciones.ContainsKey(intKey))
                                                         {
                                                             <span class="badge bg-light text-dark border">@opciones[intKey]</span>
                                                         }
@@ -199,6 +200,10 @@
                                                     } 
                                                     else
                                                     {
+                                                        @* 🚀 INTEGRACIÓN CENTRAL: 
+                                                           Si DataTypeId == 10 (Relacional), el nuevo ListQuery ejecutó un LEFT JOIN con COALESCE 
+                                                           y sobreescribió la columna 'prop.Name' con el texto descriptivo legible en lugar del GUID. 
+                                                           Se renderiza directo y a máxima velocidad. *@
                                                         @rawVal.ToString()
                                                     }
                                                 }
@@ -291,8 +296,6 @@
                     return $"/Data/{Model.EntityMetadata.Name}?" + string.Join("&", queryParams);
                 }
             }
-
-
 
         </div>
     </div>

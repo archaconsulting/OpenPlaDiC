@@ -604,60 +604,14 @@ public class DynamicDataService : IDynamicDataService
         return response;
     }
 
-
-    public async Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync0(
-        string entityName, 
-        HashSet<FilterCriterion> criteria, bool includeDeleted = false)
-    {
-        // 1. Recuperamos la metadata de la entidad
-        var entityMetadata = await _metadataService.GetEntityMetadataAsync(entityName);
-        if (entityMetadata == null) 
-            throw new ArgumentException($"La entidad '{entityName}' no existe en la metadata del Kernel.");
-
-        
-        Dictionary<string, int> propertyTypes = ((IEnumerable<EntityProperty>)entityMetadata.Properties)
-        .ToDictionary(p => p.Name, p => p.DataTypeId);            
-
-        // 2. Construimos la cláusula WHERE usando nuestro Builder
-        var (sqlWhere, dynamicParams) = DynamicQueryBuilder.BuildWhereClause(criteria, propertyTypes);
-
-        if(string.IsNullOrEmpty(sqlWhere) && !includeDeleted)
-        {
-            sqlWhere = " WHERE IsDeleted = 0 ";
-        }
-
-        // 3. Sanitizamos estrictamente el nombre de la tabla
-        string safeTableName = $"[{entityName.Replace("]", "]]")}]";
-        string finalSql = $"SELECT * FROM {safeTableName} {sqlWhere} ORDER BY CreatedAt DESC";
-
-        // 4. Mapeo de Dapper (DynamicParameters) al formato nativo del Kernel (GlobalItem[])
-        // Asumiendo que GlobalItem es un key-value pair estructurado de tu Kernel (ej: Name/Value o Key/Value)
-        var globalParams = dynamicParams.ParameterNames
-            .Select(pName => new GlobalItem 
-            { 
-                Name = pName, // O la propiedad correspondiente en tu estructura GlobalItem
-                Value = dynamicParams.Get<object>(pName).ToString() ?? "" //DBNull.Value 
-            })
-            .ToArray();
-
-        // 5. Consumimos el método oficial del Kernel sobre tu AppDbContext
-        var response = await _context.GetQueryAsync(finalSql, globalParams);
-
-        // Verificamos el estado de la respuesta del Kernel (suponiendo que sigue el patrón Result/Response estándar)
-        if (response == null || response.Data == null)
-            return Enumerable.Empty<Dictionary<string, object>>();
-
-        // 6. Traducimos el DataTable devuelto a la colección de diccionarios que espera la UI asimétrica
-        return ConvertDataTableToDictionaries(response.Data);
-    }
-
     public async Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync(
         string entityName, 
         HashSet<FilterCriterion> criteria,
         int page,
-        bool isMaster) // 🛡️ Inyectamos el flag de Súper Usuario desde el controlador
+        bool isMaster) 
     {
-        var entityMetadata = await _metadataService.GetEntityMetadataAsync(entityName);
+        // 1. Obtener la metadata completa de la entidad
+        var entityMetadata = await _metadataService.GetEntityWithPropertiesAsync(entityName);
         if (entityMetadata == null) 
             throw new ArgumentException($"La entidad '{entityName}' no existe.");
 
@@ -666,25 +620,66 @@ public class DynamicDataService : IDynamicDataService
         Dictionary<string, int> propertyTypes = ((IEnumerable<EntityProperty>)entityMetadata.Properties)
             .ToDictionary(p => p.Name, p => p.DataTypeId);
 
-        // 1. Obtenemos la cláusula de los filtros del usuario. 
-        // NOTA: Debes remover el 'WHERE IsDeleted = 0' de adentro del DynamicQueryBuilder para que solo arme los ANDs de los inputs
+        // 2. Extraer las cláusulas de filtros del usuario usando tu DynamicQueryBuilder existente
         var (sqlFilters, globalParams) = DynamicQueryBuilder.BuildWhereClause(criteria, propertyTypes);
         
-        string safeTableName = $"[{entityName.Replace("]", "]]")}]";
-
-        // 2. Establecemos la Cláusula Base de la Plataforma
-        // Si es IsMaster, el WHERE base es '1=1' (trae todo). Si no, forzamos 'IsDeleted = 0'
-        string baseWhere = isMaster ? " WHERE 1=1 " : " WHERE IsDeleted = 0 ";
-
-        // 3. Concatenamos de forma segura la base con los filtros avanzados si existen
-        if (!string.IsNullOrWhiteSpace(sqlFilters))
+        // ⚡ RECUPERACIÓN DEL QUERY PRECALCULADO (Estilo PlaDiC Core):
+        string baseQuery = "";
+        if (!string.IsNullOrEmpty(entityMetadata.ListQuery))
         {
-            // Como sqlFilters ya viene sanitizado con sus "AND ...", simplemente lo adjuntamos
-            baseWhere += sqlFilters;
+            baseQuery = entityMetadata.ListQuery;
+        }
+        else
+        {
+            // Fail-safe: Si por alguna razón el query estaba vacío en DB, lo genera al vuelo
+            baseQuery = _metadataService.BuildDynamicListQuery(entityMetadata);
         }
 
-        // Construimos el query unificado final
-        string finalSql = $"SELECT * FROM {safeTableName} {baseWhere} ORDER BY CreatedAt DESC";
+        // 3. ENVOLVER EL QUERY EN UN CTE (Common Table Expression):
+        // Como 'baseQuery' ya tiene internamente un 'WHERE t0.IsDeleted = 0', envolvemos los resultados
+        // en una subconsulta/CTE para que 'sqlFilters' (los inputs de búsqueda) apliquen limpiamente
+        // sobre las columnas ya proyectadas (incluyendo nombres relacionales).
+        string finalSql = $"WITH MainResult AS ({baseQuery}) SELECT * FROM MainResult";
+        
+        // 4. Aplicar el filtro de seguridad por Rol/Borrado lógico si NO es Master
+        if (!isMaster)
+        {
+            // Nota: El ListQuery base ya filtra por IsDeleted = 0 en la tabla principal (t0),
+            // pero si tu motor requiere re-asegurarlo o filtrar por Tenant/Usuario, lo pones aquí.
+            // Como el ListQuery ya lo trae implícito en el t0, aquí lo dejamos pasar limpio.
+        }
+
+        // 5. Concatenar los filtros dinámicos avanzados de la interfaz de usuario
+        
+        // 4 y 5. Concatenar los filtros dinámicos avanzados de la interfaz de usuario
+        if (!string.IsNullOrWhiteSpace(sqlFilters))
+        {
+            // Si 'sqlFilters' ya empieza con " WHERE", lo concatenamos directo.
+            // Si empieza con " AND", nos aseguramos de anteponer el WHERE correspondiente.
+            string filtrosLimpios = sqlFilters.Trim();
+            
+            if (filtrosLimpios.StartsWith("WHERE", StringComparison.OrdinalIgnoreCase))
+            {
+                finalSql += " " + sqlFilters;
+            }
+            else if (filtrosLimpios.StartsWith("AND", StringComparison.OrdinalIgnoreCase))
+            {
+                finalSql += " WHERE 1=1 " + sqlFilters;
+            }
+            else
+            {
+                finalSql += " WHERE " + sqlFilters;
+            }
+        }
+        else
+        {
+            // Si no hay filtros del usuario, simplemente aseguramos la estructura válida
+            finalSql += " WHERE 1=1";
+        }
+
+        // 6. Aplicar la Paginación Nativa respetando tu lógica original
+        // SQL Server exige un ORDER BY para usar OFFSET. Usamos el Id por defecto de la subconsulta.
+        finalSql += " ORDER BY [Id] DESC";
 
         if (configuredPageSize > 0)
         {
@@ -692,21 +687,25 @@ public class DynamicDataService : IDynamicDataService
             finalSql += $" OFFSET {rowsToSkip} ROWS FETCH NEXT {configuredPageSize} ROWS ONLY;";
         }
 
+        // 7. Mapear parámetros globales de tu QueryBuilder a GlobalItems planos
         var parameters = globalParams.ParameterNames
             .Select(pName => new GlobalItem 
             { 
                 Name = pName, 
-                Value = globalParams.Get<object>(pName).ToString() ?? "" 
+                Value = globalParams.Get<object>(pName)?.ToString() ?? "" 
             })
             .ToArray();
 
+        // 8. Invocar tu Contexto de Base de Datos nativo
         var response = await _context.GetQueryAsync(finalSql, parameters);
 
         if (response?.Data == null)
             return Enumerable.Empty<Dictionary<string, object>>();
 
+        // 9. RETORNO COMPATIBLE: Retornamos exactamente la colección que tu controlador y vista esperan
         return ConvertDataTableToDictionaries(response.Data);
     }
+
 
     /// <summary>
     /// Helper privado para transformar el DataTable a Diccionarios respetando el blindaje contra nulos
@@ -728,6 +727,8 @@ public class DynamicDataService : IDynamicDataService
         
         return rows;
     }
+
+
 
 }
 

@@ -85,8 +85,15 @@ namespace OpenPlaDiC.WebApp.Controllers
             );
 
             if (!response.IsSuccess)
+            {
                 TempData["Error"] = response.Message;
-
+            }
+            else 
+            {
+                // ⚡ RECALCULO AUTOMÁTICO: Si cambiaron el flag 'OnList', el ListQuery debe mutar
+                await _metadataService.RefreshEntityListQueryAsync(entityName, _context);
+            }
+            
             return RedirectToAction("Details", new { entityName = entityName });
             //return RedirectToAction($"Details/{entityName}" );
         }
@@ -118,10 +125,15 @@ namespace OpenPlaDiC.WebApp.Controllers
             );
 
             if (response.IsSuccess)
+            {
                 TempData["Message"] = $"Campo '{prop.Label}' creado correctamente";
+                // ⚡ RECALCULO AUTOMÁTICO: La columna física ya existe en base de datos, refrescamos el query
+                await _metadataService.RefreshEntityListQueryAsync(entityName, _context);
+            }
             else
-                TempData["Error"] = $"El campo '{prop.Label}' no se ha podido generar: {response.Message}.";;
-
+            {
+                TempData["Error"] = $"El campo '{prop.Label}' no se ha podido generar: {response.Message}.";
+            }
             return RedirectToAction("Details", new { entityName });
         }
 
@@ -136,9 +148,15 @@ namespace OpenPlaDiC.WebApp.Controllers
             );
 
             if (response.IsSuccess)
+            {
                 TempData["Message"] = $"Campo '{propertyName}' eliminado correctamente.";
+                // ⚡ RECALCULO AUTOMÁTICO: El campo ya no existe, lo quitamos del SELECT
+                await _metadataService.RefreshEntityListQueryAsync(entityName, _context);
+            }
             else
+            {
                 TempData["Error"] = response.Message;
+            }
 
             return RedirectToAction("Details", new { entityName });
         }
@@ -184,6 +202,11 @@ namespace OpenPlaDiC.WebApp.Controllers
                         new GlobalItem("id", item.PropertyId.ToString())
                     );
                 }
+
+                // ⚡ RECALCULO AUTOMÁTICO: Si el orden en el grid define el orden de aparición de las columnas,
+                // refrescar aquí asegura que el T-SQL se ordene de forma idéntica a la UI.
+                await _metadataService.RefreshEntityListQueryAsync(entityName, _context);
+
                 return Json(new { isSuccess = true });
             }
             catch (Exception ex)
