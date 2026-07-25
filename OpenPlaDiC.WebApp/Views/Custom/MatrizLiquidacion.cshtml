@@ -10,6 +10,7 @@
 @model List<OpenPlaDiC.Framework.GlobalItem>
 
 @{
+    ViewBag.Title = "Matriz de Liquidación";
     // 1. Extraer de forma segura el parámetro de fecha enviado por el CustomController
     var fechaParam = Model.FirstOrDefault(p => p.Name == "fecha")?.Value?.ToString();
     DateTime fechaFiltro = DateTime.Today;

@@ -43,6 +43,7 @@
     <Folder Include="Views/Shared/Components/RelatedEntities/" />
     <Folder Include="Views/Shared/Components/Sidebar/" />
     <Folder Include="Views/SystemParameter/" />
+    <Folder Include="wwwroot/uploads/" />
   </ItemGroup>	
 
 </Project>

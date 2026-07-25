@@ -8,12 +8,155 @@ using OpenPlaDiC.DAL;
 using OpenPlaDiC.Framework;
 using ClosedXML.Excel;
 using System.Text.Json;
+using System.Text;
 using OpenPlaDiC.Core.Models.DynamicQuery;
 using OpenPlaDiC.DAL.Extensions;
 
-
 namespace OpenPlaDiC.BIZ;
 
+// =========================================================================
+// Soportes y Estructuras de Datos del Kernel Evolucionados
+// =========================================================================
+public enum FilterOperator
+{
+    Equals,
+    Contains,
+    Between,
+    In,
+    // --- Nuevos Operadores Avanzados ---
+    StartsWith,
+    EndsWith,
+    NotContains,
+    NotEquals,
+    GreaterThan,
+    LessThan,
+    GreaterThanOrEqual,
+    LessThanOrEqual,
+    Today,
+    Yesterday,
+    ThisMonth,
+    Active,
+    Inactive
+}
+
+// Usamos C# 10+ Primary Constructors para un record inmutable y limpio
+public record FilterCriterion(
+    string PropertyName, 
+    FilterOperator Operator, 
+    object? Value1, 
+    object? Value2 = null
+);
+
+// Componente estático encargado del parseo atómico a T-SQL parametrizado
+public static class DynamicQueryBuilder
+{
+    public static (string SqlClause, List<GlobalItem> DbParameters) BuildAdvancedWhereClause(
+        HashSet<FilterCriterion> criteria, 
+        Dictionary<string, int> propertyTypes)
+    {
+        var sqlBuilder = new StringBuilder();
+        var dbParameters = new List<GlobalItem>();
+        int paramCounter = 0;
+
+        if (criteria == null || !criteria.Any())
+            return (string.Empty, dbParameters);
+
+        foreach (var filter in criteria)
+        {
+            paramCounter++;
+            string p1 = $"@p_adv_{paramCounter}_v1";
+            string p2 = $"@p_adv_{paramCounter}_v2";
+
+            string columnName = $"[{filter.PropertyName}]";
+            var val1Str = filter.Value1?.ToString() ?? string.Empty;
+            var val2Str = filter.Value2?.ToString() ?? string.Empty;
+
+            switch (filter.Operator)
+            {
+                // === OPERADORES DE STRING ===
+                case FilterOperator.Contains:
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1, $"%{val1Str}%"));
+                    break;
+                case FilterOperator.StartsWith:
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1, $"{val1Str}%"));
+                    break;
+                case FilterOperator.EndsWith:
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1, $"%{val1Str}"));
+                    break;
+                case FilterOperator.NotContains:
+                    sqlBuilder.Append($" AND {columnName} NOT LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1, $"%{val1Str}%"));
+                    break;
+
+                // === OPERADORES COMUNES (NUMÉRICOS, FECHAS, IGUALDAD) ===
+                case FilterOperator.Equals:
+                    sqlBuilder.Append($" AND {columnName} = {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+                case FilterOperator.NotEquals:
+                    sqlBuilder.Append($" AND {columnName} <> {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+                case FilterOperator.GreaterThan:
+                    sqlBuilder.Append($" AND {columnName} > {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+                case FilterOperator.LessThan:
+                    sqlBuilder.Append($" AND {columnName} < {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+                case FilterOperator.GreaterThanOrEqual:
+                    sqlBuilder.Append($" AND {columnName} >= {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+                case FilterOperator.LessThanOrEqual:
+                    sqlBuilder.Append($" AND {columnName} <= {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+
+                // === OPERADORES DE RANGOS Y FECHAS ESPECIALES ===
+                case FilterOperator.Between:
+                    sqlBuilder.Append($" AND {columnName} BETWEEN {p1} AND {p2}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    dbParameters.Add(new GlobalItem(p2, val2Str));
+                    break;
+
+                case FilterOperator.Today:
+                    sqlBuilder.Append($" AND CAST({columnName} AS DATE) = CAST(GETDATE() AS DATE)");
+                    break;
+                case FilterOperator.Yesterday:
+                    sqlBuilder.Append($" AND CAST({columnName} AS DATE) = CAST(DATEADD(day, -1, GETDATE()) AS DATE)");
+                    break;
+                case FilterOperator.ThisMonth:
+                    sqlBuilder.Append($" AND YEAR({columnName}) = YEAR(GETDATE()) AND MONTH({columnName}) = MONTH(GETDATE())");
+                    break;
+
+                // === BOOLEANOS ===
+                case FilterOperator.Active:
+                    sqlBuilder.Append($" AND {columnName} = 1");
+                    break;
+                case FilterOperator.Inactive:
+                    sqlBuilder.Append($" AND ({columnName} = 0 OR {columnName} IS NULL)");
+                    break;
+                
+                case FilterOperator.In:
+                    // Fallback de compatibilidad por si se llega a ocupar el operador IN nativo
+                    sqlBuilder.Append($" AND {columnName} = {p1}");
+                    dbParameters.Add(new GlobalItem(p1, val1Str));
+                    break;
+            }
+        }
+
+        return (sqlBuilder.ToString(), dbParameters);
+    }
+}
+
+// =========================================================================
+// Interfaz de Servicio
+// =========================================================================
 public interface IDynamicDataService
 {
     Task<Response<DataTable>> GetAllAsync(string entityName, bool allFields = true);
@@ -28,19 +171,17 @@ public interface IDynamicDataService
         HashSet<FilterCriterion> criteria,
         int page,
         bool isMaster);
-
-
 }
 
-
+// =========================================================================
+// Implementación del Servicio de Negocio
+// =========================================================================
 public class DynamicDataService : IDynamicDataService
 {
     private readonly AppDbContext _context;
     private readonly IMetadataService _metadataService;
-
-    private readonly IRazorRenderService _razorService; // Inyectar esto
+    private readonly IRazorRenderService _razorService;
     private readonly string _triggerPath;
-
 
     public DynamicDataService(AppDbContext context, IWebHostEnvironment env, IRazorRenderService razorService, IMetadataService metadataService)
     {
@@ -55,94 +196,41 @@ public class DynamicDataService : IDynamicDataService
 
     public async Task<Response<DataTable>> GetAllAsync(string entityName, bool allFields = true)
     {
-        if(allFields)
+        if (allFields)
         {
-            
             return await _context.GetQueryAsync($"SELECT * FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC");
-
         }
-
-
 
         var respE = await _metadataService.GetEntityWithPropertiesAsync(entityName);
 
         if (respE != null)
         {
-
-            if( string.IsNullOrEmpty( respE.ListQuery))
+            if (string.IsNullOrEmpty(respE.ListQuery))
             {
-            
-                string sql = " select e.Id, e.Folio, e.Number " + (respE.UseNameField ? ", e.Name " : "")  ;
-
+                string sql = " select e.Id, e.Folio, e.Number " + (respE.UseNameField ? ", e.Name " : "");
                 var list = respE.Properties.Where(x => x.OnList).ToList();
 
-                if(list.Count > 0)
+                if (list.Count > 0)
                 {
                     sql = " select e.Id, e.Folio, e.Number ";
-
-                    foreach(var prop in list)
+                    foreach (var prop in list)
                     {
-                        
-                        sql += " ,e."+prop.Name +" ["+prop.Label+"] ";
-
+                        sql += " ,e." + prop.Name + " [" + prop.Label +"] ";
                     }
                 }
 
                 sql += $" FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC";
-
                 return await _context.GetQueryAsync(sql);
             }
             else
             {
-                
                 return await _context.GetQueryAsync(respE.ListQuery);
-
             }
-
         }
         else
         {
-            
             return await _context.GetQueryAsync($"SELECT * FROM {entityName} e WHERE e.IsDeleted = 0 ORDER BY e.CreatedAt DESC");
-
         }
-
-        // Reutilizamos la respuesta estandarizada que ya devuelve el DbContext
-    }
-
-    public async Task<Response<Dictionary<string, object>>> GetById2Async(string entityName, Guid id)
-    {
-        var response = new Response<Dictionary<string, object>>();
-        try
-        {
-            var dbResponse = await _context.GetQueryAsync($"SELECT * FROM {entityName} WHERE Id = @p0", 
-                new GlobalItem { Name = "@p0", Value = id.ToString() });
-
-            if (dbResponse.IsSuccess && dbResponse.Data.Rows.Count > 0)
-            {
-                var dict = new Dictionary<string, object>();
-                DataRow row = dbResponse.Data.Rows[0];
-                foreach (DataColumn col in dbResponse.Data.Columns)
-                {
-                    dict[col.ColumnName] = row[col.ColumnName] == DBNull.Value ? null : row[col.ColumnName];
-                }
-                response.Data = dict;
-                response.IsSuccess = true;
-            }
-            else
-            {
-                response.IsSuccess = false;
-                response.Message = "Record not found.";
-                response.Code = 404;
-            }
-        }
-        catch (Exception ex)
-        {
-            response.IsSuccess = false;
-            response.IsException = true;
-            response.Message = ex.Message;
-        }
-        return response;
     }
 
     public async Task<Response<Dictionary<string, object>>> GetByIdAsync(string entityName, Guid id)
@@ -150,7 +238,6 @@ public class DynamicDataService : IDynamicDataService
         var response = new Response<Dictionary<string, object>>();
         try
         {
-            // 1. Obtener la metadata de la entidad para saber qué campos son relaciones
             var entityMetadata = await _context.Entities
                 .Include(e => e.Properties)
                 .FirstOrDefaultAsync(e => e.Name == entityName);
@@ -158,7 +245,6 @@ public class DynamicDataService : IDynamicDataService
             if (entityMetadata == null)
                 return new Response<Dictionary<string, object>> { IsSuccess = false, Message = "Metadata no encontrada." };
 
-            // 2. Obtener el registro principal de la tabla física
             string sql = $"SELECT * FROM {entityName} WHERE Id = @p0";
             var dbResponse = await _context.GetQueryAsync(sql, new GlobalItem { Name = "@p0", Value = id.ToString() });
 
@@ -167,25 +253,21 @@ public class DynamicDataService : IDynamicDataService
                 var dict = new Dictionary<string, object>();
                 DataRow row = dbResponse.Data.Rows[0];
 
-                // 3. Mapear columnas físicas al diccionario
                 foreach (DataColumn col in dbResponse.Data.Columns)
                 {
                     dict[col.ColumnName] = row[col.ColumnName] == DBNull.Value ? null : row[col.ColumnName];
                 }
 
-                // 4. Lógica de Lookup: Buscar textos para campos de relación (DataTypeId = 10)
                 foreach (var prop in entityMetadata.Properties.Where(p => p.DataTypeId == 10))
                 {
                     var relatedId = dict[prop.Name]?.ToString();
                     if (!string.IsNullOrEmpty(relatedId) && Guid.TryParse(relatedId, out Guid gId))
                     {
-                        // Buscamos el nombre legible en la tabla origen (SourceDefinition)
                         string lookupSql = $"SELECT Name FROM {prop.SourceDefinition} WHERE Id = @p0";
                         var lookupRes = await _context.GetQueryAsync(lookupSql, new GlobalItem { Name = "@p0", Value = relatedId });
 
                         if (lookupRes.IsSuccess && lookupRes.Data.Rows.Count > 0)
                         {
-                            // Guardamos el texto en una llave especial que el DynamicForm buscará
                             dict[prop.Name + "_Text"] = lookupRes.Data.Rows[0]["Name"].ToString();
                         }
                     }
@@ -214,56 +296,99 @@ public class DynamicDataService : IDynamicDataService
     {
         var dict = new Dictionary<string, object>();
 
-
         if (entity.UseNameField && form.ContainsKey("Name"))
             dict["Name"] = form["Name"].ToString();
 
-
-        // Recorrer las propiedades y validar tipos básicos antes de compilar el SQL
         foreach (var prop in entity.Properties)
         {
-            
-            //// Implementación previa
-            //if (!form.ContainsKey(prop.Name)) continue;
 
-            // ⚡ MODIFICACIÓN CRÍTICA PARA BOOLEANOS APAGADOS:
-            // Si el campo NO viene en el formulario, pero en la metadata sabemos que es Booleano (DataTypeId == 3)
-            // entonces forzamos su inserción en el diccionario como 0 (false).
-            if (!form.ContainsKey(prop.Name))
+
+            // Tratamiento de archivos subidos (Tipo de dato Image - 18)
+            if (prop.DataTypeId == 18)
             {
-                if (prop.DataTypeId == 11) // Supongamos que 3 es Boolean/Switch en tu Kernel
+                var file = form.Files.GetFile(prop.Name);
+                if (file != null && file.Length > 0)
                 {
-                    dict[prop.Name] = false; // Forzamos el false en SQL Server
+                    // Regla de Negocio / Configuración:
+                    // Si prop.SourceDefinition es "STORAGE" o "FILE", guarda el archivo físico en /wwwroot/uploads y almacena el nombre/GUID.
+                    // De lo contrario (o si es "BASE64"), convierte la imagen a cadena Base64 Data URI.
+                    string storageMode = (prop.SourceDefinition ?? "").Trim().ToUpper();
+
+                    if (storageMode == "STORAGE" || storageMode == "FILE")
+                    {
+                        string extension = Path.GetExtension(file.FileName);
+                        string fileName = $"{Guid.NewGuid()}{extension}";
+                        string uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
+
+                        if (!Directory.Exists(uploadsFolder))
+                            Directory.CreateDirectory(uploadsFolder);
+
+                        string filePath = Path.Combine(uploadsFolder, fileName);
+                        using (var stream = new FileStream(filePath, FileMode.Create))
+                        {
+                            file.CopyTo(stream);
+                        }
+
+                        dict[prop.Name] = fileName; // Guarda la referencia/GUID en la BD
+                    }
+                    else // Modo por defecto: BASE64
+                    {
+                        using (var ms = new MemoryStream())
+                        {
+                            file.CopyTo(ms);
+                            byte[] fileBytes = ms.ToArray();
+                            string base64String = Convert.ToBase64String(fileBytes);
+                            string contentType = file.ContentType;
+                            dict[prop.Name] = $"data:{contentType};base64,{base64String}";
+                        }
+                    }
                 }
-                continue; // Para cualquier otro tipo de campo, sí continuamos el ciclo normalmente
+                else if (form.ContainsKey($"{prop.Name}_KeepCurrent") && form[$"{prop.Name}_KeepCurrent"] == "true")
+                {
+                    // Mantiene el valor actual previamente almacenado si no se sube un archivo nuevo
+                    if (form.ContainsKey($"{prop.Name}_Existing"))
+                        dict[prop.Name] = form[$"{prop.Name}_Existing"].ToString();
+                }
+                else
+                {
+                    dict[prop.Name] = DBNull.Value;
+                }
+
+                continue;
             }
 
 
+            if (!form.ContainsKey(prop.Name))
+            {
+                if (prop.DataTypeId == 11) 
+                {
+                    dict[prop.Name] = false;
+                }
+                continue; 
+            }
+
             string rawValue = form[prop.Name].ToString();
 
-            // Si el campo está vacío y no es requerido, lo mandamos como NULL
             if (string.IsNullOrWhiteSpace(rawValue))
             {
                 dict[prop.Name] = DBNull.Value;
                 continue;
             }
 
-            // Conversión según DataTypeId (Enum PropertyDataType)
             switch (prop.DataTypeId)
             {
-                case 3: // Supongamos 3 = Boolean/Switch
+                case 11: 
                     dict[prop.Name] = rawValue == "true" || rawValue == "on" ? 1 : 0;
                     break;
                     
-                case 4: // Supongamos 4 = DateTime
+                case 4: 
                     if (DateTime.TryParse(rawValue, out DateTime dt))
                         dict[prop.Name] = dt.ToString("yyyy-MM-dd HH:mm:ss");
                     else
                         dict[prop.Name] = DBNull.Value;
                     break;
 
-
-                case 10: // RelatedEntity
+                case 10: 
                     if (form.ContainsKey(prop.Name) && !string.IsNullOrWhiteSpace(form[prop.Name].ToString()))
                     {
                         if (Guid.TryParse(form[prop.Name].ToString(), out Guid gId))
@@ -273,11 +398,15 @@ public class DynamicDataService : IDynamicDataService
                     }
                     else
                     {
-                        dict[prop.Name] = DBNull.Value; // Si el usuario limpia el campo, se guarda NULL en SQL
+                        dict[prop.Name] = DBNull.Value; 
                     }
                     break;
 
-                default: // Textos o Strings estándar
+                case 19: // Url (NVARCHAR)
+                    dict[prop.Name] = rawValue.Trim();
+                    break;
+
+                default: 
                     dict[prop.Name] = rawValue.Trim();
                     break;
             }
@@ -286,7 +415,6 @@ public class DynamicDataService : IDynamicDataService
         return dict;
     }
 
-
     public async Task<Response<bool>> SaveAsync(string entityName, Guid id, IFormCollection form, Entity entity, Guid userId)
     {
         var response = new Response<bool>();
@@ -294,35 +422,27 @@ public class DynamicDataService : IDynamicDataService
         {
             bool isUpdate = id != Guid.Empty;
             var dataToSave = ConvertFormToDictionary(form, entity);
-
-
             var newData = ConvertFormToDictionary(form, entity);
             var oldData = new Dictionary<string, object>();
 
-
             if (isUpdate)
             {
-                // 1. Obtener los valores actuales de la base de datos antes de actualizar
                 var currentRecordRes = await GetByIdAsync(entityName, id);
                 if (currentRecordRes.IsSuccess) oldData = currentRecordRes.Data;
             }
 
-            // 1. --- TRIGGER BEFORE ---
             string triggerCode = isUpdate ? entity.OnBeforeUpdate : entity.OnBeforeInsert;
             if (!string.IsNullOrWhiteSpace(triggerCode))
             {
                 string triggerType = isUpdate ? "BeforeUpdate" : "BeforeInsert";
                 await SyncTriggerFile(entity.Name, triggerType, triggerCode);
                 string viewPath = $"~/Views/Custom/Triggers/_{entity.Name}_{triggerType}.cshtml";
-                // Si el código Razor lanza una excepción, se detiene el flujo y va al catch
                 await _razorService.RenderToStringAsync(viewPath, dataToSave);
             }
 
-            // 2. --- CONSTRUCCIÓN DINÁMICA DE SQL ---
             string sql = "";
             var parameters = new List<GlobalItem>();
             var fieldsToSave = entity.Properties.Where(p => p.IsEditable).Select(p => p.Name).ToList();
-            //if (entity.UseNameField) fieldsToSave.Add("Name");
 
             if (isUpdate)
             {
@@ -333,6 +453,12 @@ public class DynamicDataService : IDynamicDataService
                     {
                         setClauses.Add($"{field} = @{field}");
                         parameters.Add(new GlobalItem(field, form[field].ToString()));
+                    }
+                    else
+                    {
+                        setClauses.Add($"{field} = @{field}");
+                        parameters.Add(new GlobalItem(field, newData[field].ToString()));
+                        
                     }
                 }
                 setClauses.Add("UpdatedAt = GETDATE()");
@@ -355,16 +481,21 @@ public class DynamicDataService : IDynamicDataService
                         values.Add($"@{field}");
                         parameters.Add(new GlobalItem(field, form[field].ToString()));
                     }
+                    else
+                    {
+                        columns.Add(field);
+                        values.Add($"@{field}");
+                        parameters.Add(new GlobalItem(field, newData[field].ToString()));                        
+
+                    }
                 }
                 sql = $"INSERT INTO {entityName} ({string.Join(", ", columns)}) VALUES ({string.Join(", ", values)})";
             }
 
-            // 3. --- EJECUCIÓN EN BASE DE DATOS ---
             var execResponse = await _context.ExecQueryAsync(sql, parameters.ToArray());
 
             if (execResponse.IsSuccess)
             {
-                // 4. --- TRIGGER AFTER ---
                 string afterCode = isUpdate ? entity.OnAfterUpdate : entity.OnAfterInsert;
                 if (!string.IsNullOrWhiteSpace(afterCode))
                 {
@@ -374,10 +505,8 @@ public class DynamicDataService : IDynamicDataService
                     await _razorService.RenderToStringAsync(viewPath, dataToSave);
                 }
 
-                // 2. Registrar Auditoría
                 await WriteAuditLog(entityName, id, isUpdate ? "UPDATE" : "INSERT", oldData, newData, userId);
             
-
                 response.IsSuccess = true;
                 response.Data = true;
                 response.Code = 200;
@@ -397,10 +526,8 @@ public class DynamicDataService : IDynamicDataService
         return response;
     }
 
-
     private async Task WriteAuditLog(string entity, Guid recordId, string action, Dictionary<string, object> oldVal, Dictionary<string, object> newVal, Guid userId)
     {
-        // Solo guardamos lo que realmente cambió para ahorrar espacio
         var changesOld = new Dictionary<string, object>();
         var changesNew = new Dictionary<string, object>();
 
@@ -433,11 +560,9 @@ public class DynamicDataService : IDynamicDataService
     {
         if (string.IsNullOrEmpty(content)) return;
 
-        // Nombre de archivo: _Product_BeforeInsert.cshtml
         string fileName = $"_{entityName}_{triggerType}.cshtml";
         string filePath = Path.Combine(_triggerPath, fileName);
 
-        // Solo escribimos si el contenido cambió o el archivo no existe (Caché simple)
         await File.WriteAllTextAsync(filePath, content);
     }
 
@@ -446,21 +571,15 @@ public class DynamicDataService : IDynamicDataService
         var response = new Response<byte[]>();
         try
         {
-            // 1. Obtener los datos actuales
             var dataResponse = await GetAllAsync(entityName);
             if (!dataResponse.IsSuccess) return new Response<byte[]> { IsSuccess = false, Message = "Error al obtener datos" };
 
             var table = dataResponse.Data;
 
-            // 2. Crear el libro de Excel
             using (var workbook = new XLWorkbook())
             {
                 var worksheet = workbook.Worksheets.Add(entityName);
-                
-                // Insertar la tabla (incluye encabezados automáticamente)
                 worksheet.Cell(1, 1).InsertTable(table);
-                
-                // Estética básica: Ajustar columnas y poner encabezado en negrita
                 worksheet.Columns().AdjustToContents();
                 worksheet.Row(1).Style.Font.Bold = true;
                 worksheet.Row(1).Style.Fill.BackgroundColor = XLColor.LightGray;
@@ -486,7 +605,6 @@ public class DynamicDataService : IDynamicDataService
         var response = new Response<bool>();
         try
         {
-            // El borrado lógico solo cambia el flag y registra quién y cuándo
             string sql = $"UPDATE {entityName} SET IsDeleted = 1, UpdatedAt = GETDATE(), UpdatedById = @p1 WHERE Id = @p0";
             
             var execResponse = await _context.ExecQueryAsync(sql, 
@@ -517,24 +635,19 @@ public class DynamicDataService : IDynamicDataService
     {
         var dict = new Dictionary<string, object>
         {
-            // Campos estructurales requeridos por el Kernel
             ["Id"] = Guid.Empty,
             ["Folio"] = "NUEVO",
             ["CreatedAt"] = DateTime.Now
         };
 
-        // Agregar el campo Name si la entidad lo utiliza
         if (entity.UseNameField)
         {
             dict["Name"] = string.Empty;
         }
 
-        // Inicializar cada propiedad configurada en nulo para el formulario
         foreach (var prop in entity.Properties)
         {
             dict[prop.Name] = null;
-            
-            // Si es una relación, inicializamos también su campo de texto descriptivo
             if (prop.DataTypeId == 10)
             {
                 dict[prop.Name + "_Text"] = string.Empty;
@@ -543,8 +656,6 @@ public class DynamicDataService : IDynamicDataService
 
         return new Response<Dictionary<string, object>> { IsSuccess = true, Data = dict };
     }
-
-
 
     public async Task<Response<Dictionary<string, object>>> CreateEmptyDictionaryAsync(Entity entity, IQueryCollection query)
     {
@@ -560,33 +671,27 @@ public class DynamicDataService : IDynamicDataService
 
             if (entity.UseNameField) dict["Name"] = string.Empty;
 
-            // 1. Inicializar todas las propiedades configuradas de la entidad en nulo
             foreach (var prop in entity.Properties)
             {
                 dict[prop.Name] = null;
                 if (prop.DataTypeId == 10) dict[prop.Name + "_Text"] = string.Empty;
             }
 
-            // 2. Evaluar si la Query String contiene parámetros que coincidan con las propiedades de la entidad
             foreach (var param in query)
             {
-                // Buscamos si la tabla tiene una propiedad con el nombre que viene en la URL
                 var matchingProp = entity.Properties.FirstOrDefault(p => p.Name.Equals(param.Key, StringComparison.OrdinalIgnoreCase));
                 
                 if (matchingProp != null && Guid.TryParse(param.Value, out Guid parentGuid))
                 {
-                    // Asignamos el ID del padre al campo de la tabla física
                     dict[matchingProp.Name] = parentGuid;
 
-                    // 3. Inteligencia de Contexto: Si es una relación (Tipo 10), traemos su texto amigable de inmediato
                     if (matchingProp.DataTypeId == 10)
                     {
                         string lookupSql = $"SELECT Name FROM {matchingProp.SourceDefinition} WHERE Id = @p0";
-                        var lookupRes = await _context.GetQueryAsync(lookupSql, new Framework.GlobalItem { Name = "@p0", Value = parentGuid.ToString() });
+                        var lookupRes = await _context.GetQueryAsync(lookupSql, new GlobalItem { Name = "@p0", Value = parentGuid.ToString() });
 
                         if (lookupRes.IsSuccess && lookupRes.Data.Rows.Count > 0)
                         {
-                            // Llenamos el valor descriptivo para el input de la interfaz
                             dict[matchingProp.Name + "_Text"] = lookupRes.Data.Rows[0]["Name"].ToString();
                         }
                     }
@@ -604,6 +709,9 @@ public class DynamicDataService : IDynamicDataService
         return response;
     }
 
+    // =========================================================================
+    // 🚀 MÉTODO PRINCIPAL DE ALTO RENDIMIENTO REESTRUCTURADO Y BLINDADO
+    // =========================================================================
     public async Task<IEnumerable<Dictionary<string, object>>> GetPagedDataAsync(
         string entityName, 
         HashSet<FilterCriterion> criteria,
@@ -620,10 +728,10 @@ public class DynamicDataService : IDynamicDataService
         Dictionary<string, int> propertyTypes = ((IEnumerable<EntityProperty>)entityMetadata.Properties)
             .ToDictionary(p => p.Name, p => p.DataTypeId);
 
-        // 2. Extraer las cláusulas de filtros del usuario usando tu DynamicQueryBuilder existente
-        var (sqlFilters, globalParams) = DynamicQueryBuilder.BuildWhereClause(criteria, propertyTypes);
+        // 2. Extraer las cláusulas de filtros avanzados usando el nuevo motor de parseo atómico
+        var (sqlFilters, dbParameters) = DynamicQueryBuilder.BuildAdvancedWhereClause(criteria, propertyTypes);
         
-        // ⚡ RECUPERACIÓN DEL QUERY PRECALCULADO (Estilo PlaDiC Core):
+        // 3. Recuperación segura de la consulta optimizada (ListQuery precalculado)
         string baseQuery = "";
         if (!string.IsNullOrEmpty(entityMetadata.ListQuery))
         {
@@ -631,31 +739,15 @@ public class DynamicDataService : IDynamicDataService
         }
         else
         {
-            // Fail-safe: Si por alguna razón el query estaba vacío en DB, lo genera al vuelo
             baseQuery = _metadataService.BuildDynamicListQuery(entityMetadata);
         }
 
-        // 3. ENVOLVER EL QUERY EN UN CTE (Common Table Expression):
-        // Como 'baseQuery' ya tiene internamente un 'WHERE t0.IsDeleted = 0', envolvemos los resultados
-        // en una subconsulta/CTE para que 'sqlFilters' (los inputs de búsqueda) apliquen limpiamente
-        // sobre las columnas ya proyectadas (incluyendo nombres relacionales).
+        // 4. Envolver el query base en una Expresión de Tabla Común (CTE)
         string finalSql = $"WITH MainResult AS ({baseQuery}) SELECT * FROM MainResult";
         
-        // 4. Aplicar el filtro de seguridad por Rol/Borrado lógico si NO es Master
-        if (!isMaster)
-        {
-            // Nota: El ListQuery base ya filtra por IsDeleted = 0 en la tabla principal (t0),
-            // pero si tu motor requiere re-asegurarlo o filtrar por Tenant/Usuario, lo pones aquí.
-            // Como el ListQuery ya lo trae implícito en el t0, aquí lo dejamos pasar limpio.
-        }
-
-        // 5. Concatenar los filtros dinámicos avanzados de la interfaz de usuario
-        
-        // 4 y 5. Concatenar los filtros dinámicos avanzados de la interfaz de usuario
+        // 5. Concatenar de forma segura los filtros avanzados sin duplicar cláusulas WHERE
         if (!string.IsNullOrWhiteSpace(sqlFilters))
         {
-            // Si 'sqlFilters' ya empieza con " WHERE", lo concatenamos directo.
-            // Si empieza con " AND", nos aseguramos de anteponer el WHERE correspondiente.
             string filtrosLimpios = sqlFilters.Trim();
             
             if (filtrosLimpios.StartsWith("WHERE", StringComparison.OrdinalIgnoreCase))
@@ -673,12 +765,10 @@ public class DynamicDataService : IDynamicDataService
         }
         else
         {
-            // Si no hay filtros del usuario, simplemente aseguramos la estructura válida
             finalSql += " WHERE 1=1";
         }
 
-        // 6. Aplicar la Paginación Nativa respetando tu lógica original
-        // SQL Server exige un ORDER BY para usar OFFSET. Usamos el Id por defecto de la subconsulta.
+        // 6. Configurar el ordenamiento estructural requerido por SQL Server para paginar
         finalSql += " ORDER BY [Id] DESC";
 
         if (configuredPageSize > 0)
@@ -687,29 +777,19 @@ public class DynamicDataService : IDynamicDataService
             finalSql += $" OFFSET {rowsToSkip} ROWS FETCH NEXT {configuredPageSize} ROWS ONLY;";
         }
 
-        // 7. Mapear parámetros globales de tu QueryBuilder a GlobalItems planos
-        var parameters = globalParams.ParameterNames
-            .Select(pName => new GlobalItem 
-            { 
-                Name = pName, 
-                Value = globalParams.Get<object>(pName)?.ToString() ?? "" 
-            })
-            .ToArray();
+        // 7. Conversión nativa de la lista de parámetros al arreglo plano esperado por AppDbContext
+        var parametersArray = dbParameters.ToArray();
 
-        // 8. Invocar tu Contexto de Base de Datos nativo
-        var response = await _context.GetQueryAsync(finalSql, parameters);
+        // 8. Ejecución asíncrona de la consulta unificada en la base de datos
+        var response = await _context.GetQueryAsync(finalSql, parametersArray);
 
         if (response?.Data == null)
             return Enumerable.Empty<Dictionary<string, object>>();
 
-        // 9. RETORNO COMPATIBLE: Retornamos exactamente la colección que tu controlador y vista esperan
+        // 9. Retorno compatible en colecciones iterables de diccionarios planos
         return ConvertDataTableToDictionaries(response.Data);
     }
 
-
-    /// <summary>
-    /// Helper privado para transformar el DataTable a Diccionarios respetando el blindaje contra nulos
-    /// </summary>
     private static IEnumerable<Dictionary<string, object>> ConvertDataTableToDictionaries(DataTable table)
     {
         var rows = new List<Dictionary<string, object>>();
@@ -719,7 +799,6 @@ public class DynamicDataService : IDynamicDataService
             var dict = new Dictionary<string, object>();
             foreach (DataColumn col in table.Columns)
             {
-                // Mantenemos el blindaje estricto contra DBNull exigido en tus reglas estabilizadas
                 dict[col.ColumnName] = row[col] == DBNull.Value ? null! : row[col];
             }
             rows.Add(dict);
@@ -727,8 +806,4 @@ public class DynamicDataService : IDynamicDataService
         
         return rows;
     }
-
-
-
 }
-

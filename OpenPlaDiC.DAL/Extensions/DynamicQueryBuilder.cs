@@ -1,6 +1,7 @@
 using System.Text;
 using Dapper;
 using OpenPlaDiC.Core.Models.DynamicQuery;
+using OpenPlaDiC.Framework;
 
 namespace OpenPlaDiC.DAL.Extensions;
 
@@ -57,4 +58,101 @@ public static class DynamicQueryBuilder
 
         return (sb.ToString(), parameters);
     }
+
+    // Dentro de tu flujo de generación de SQL en el servicio o Builder:
+    public static (string SqlClause, List<GlobalItem> DbParameters) BuildAdvancedWhereClause(
+        List<GlobalItem> uiFilters, 
+        Dictionary<string, int> propertyTypes)
+    {
+        var sqlBuilder = new StringBuilder();
+        var dbParameters = new List<GlobalItem>();
+        int paramCounter = 0;
+
+        foreach (var filter in uiFilters)
+        {
+            paramCounter++;
+            string p1 = $"@p_adv_{paramCounter}_v1";
+            string p2 = $"@p_adv_{paramCounter}_v2";
+
+            string columnName = $"[{filter.Name}]";
+            string op = filter.Opt.ToLower();
+
+            switch (op)
+            {
+                // === OPERADORES DE STRING ===
+                case "contains":
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), $"%{filter.Value}%"));
+                    break;
+                case "startswith":
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), $"{filter.Value}%"));
+                    break;
+                case "endswith":
+                    sqlBuilder.Append($" AND {columnName} LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), $"%{filter.Value}"));
+                    break;
+                case "notcontains":
+                    sqlBuilder.Append($" AND {columnName} NOT LIKE {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), $"%{filter.Value}%"));
+                    break;
+
+                // === OPERADORES COMUNES (NUMÉRICOS, FECHAS, IGUALDAD) ===
+                case "equals":
+                case "equalto":
+                    sqlBuilder.Append($" AND {columnName} = {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+                case "notequals":
+                    sqlBuilder.Append($" AND {columnName} <> {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+                case "greaterthan":
+                    sqlBuilder.Append($" AND {columnName} > {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+                case "lessthan":
+                    sqlBuilder.Append($" AND {columnName} < {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+                case "greaterthanorequal":
+                    sqlBuilder.Append($" AND {columnName} >= {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+                case "lessthanorequal":
+                    sqlBuilder.Append($" AND {columnName} <= {p1}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    break;
+
+                // === OPERADORES DE RANGOS Y FECHAS ESPECIALES ===
+                case "between":
+                    sqlBuilder.Append($" AND {columnName} BETWEEN {p1} AND {p2}");
+                    dbParameters.Add(new GlobalItem(p1.Replace("@",""), filter.Value));
+                    dbParameters.Add(new GlobalItem(p2.Replace("@",""), filter.Text)); // Ocupamos la propiedad Text
+                    break;
+
+                case "today":
+                    sqlBuilder.Append($" AND CAST({columnName} AS DATE) = CAST(GETDATE() AS DATE)");
+                    break;
+                case "yesterday":
+                    sqlBuilder.Append($" AND CAST({columnName} AS DATE) = CAST(DATEADD(day, -1, GETDATE()) AS DATE)");
+                    break;
+                case "thismonth":
+                    sqlBuilder.Append($" AND YEAR({columnName}) = YEAR(GETDATE()) AND MONTH({columnName}) = MONTH(GETDATE())");
+                    break;
+
+                // === BOOLEANOS ===
+                case "active":
+                    sqlBuilder.Append($" AND {columnName} = 1");
+                    break;
+                case "inactive":
+                    sqlBuilder.Append($" AND ({columnName} = 0 OR {columnName} IS NULL)");
+                    break;
+            }
+        }
+
+        return (sqlBuilder.ToString(), dbParameters);
+    }
+
+
 }

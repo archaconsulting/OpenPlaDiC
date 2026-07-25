@@ -13,6 +13,8 @@ namespace OpenPlaDiC.Framework
         public int Code { get; set; } = 0;
         public object? Tag { get; set; }
         public string? Text { get; set; }
+        public string? Opt { get; set; }
+        
 
         public GlobalItem() 
         {

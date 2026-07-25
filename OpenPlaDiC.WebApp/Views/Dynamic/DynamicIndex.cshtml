@@ -13,7 +13,6 @@
     ViewData["Title"] = entityLabel;
 }
 
-
 @{
     // Helper para transformar el string "0:Transportista,1:Taller" en un Diccionario de C#
     Dictionary<int, string> ParseListValues(string? sourceDefinition)
@@ -32,56 +31,137 @@
         }
         return dictionary;
     }
+
+    // Helper para recuperar valores de filtros de manera segura sin romper si la llave no existe
+    string GetFilterValue(string key) => Model.CurrentFilters.ContainsKey(key) ? Model.CurrentFilters[key] : "";
 }
 
 <div class="card mb-4 shadow-sm">
     <div class="card-header bg-light d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-filter me-2"></i> Filtros Avanzados</h5>
+        <h5 class="mb-0"><i class="fas fa-filter me-2"></i> Filtros Avanzados Específicos</h5>
         <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#filterPanel">
             <i class="fas fa-chevron-down"></i>
         </button>
     </div>
     <div id="filterPanel" class="collapse show card-body">
-        <form action="/Data/@entityName" method="GET">
+        <form action="/Data/@entityName" method="GET" autocomplete="off">
             <div class="row g-3">
                 @foreach (var prop in Model.EntityMetadata.Properties)
                 {
                     // Regla de negocio: Solo renderizar filtros para propiedades marcadas para mostrarse en el Grid
                     if (prop.OnList == true)
                     {
-                        <div class="col-md-4">
-                            <label class="form-label fw-bold small text-muted">@prop.Label</label>
+                        <div class="col-md-4 filter-group-box" data-property-type="@prop.DataTypeId">
+                            <label class="form-label fw-bold small text-muted mb-1 d-block">@prop.Label</label>
 
-                            @if (prop.DataTypeId == 10) // RelatedEntity (Lookup)
+                            @if (prop.DataTypeId == 10) // RelatedEntity (Lookup / Relacional)
                             {
-                                var currentValue = Model.CurrentFilters.ContainsKey(prop.Name) ? Model.CurrentFilters[prop.Name] : "";
-                                <select name="@prop.Name" class="form-select form-select-sm">
-                                    <option value="">-- Todos --</option>
-                                    @* Los <option> se cargan dinámicamente según el SourceDefinition o inputs *@
-                                </select>
-                            }
-                            else if (prop.DataTypeId == 3 || prop.DataTypeId == 4) // Numérico o Fecha (Rango)
-                            {
-                                var valFrom = Model.CurrentFilters.ContainsKey($"{prop.Name}_From") ? Model.CurrentFilters[$"{prop.Name}_From"] : "";
-                                var valTo = Model.CurrentFilters.ContainsKey($"{prop.Name}_To") ? Model.CurrentFilters[$"{prop.Name}_To"] : "";
-                                
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                var currentV1 = GetFilterValue($"{prop.Name}_value1");
+
                                 <div class="input-group input-group-sm">
-                                    <input type="@(prop.DataTypeId == 4 ? "date" : "number")" name="@(prop.Name)_From" value="@valFrom" class="form-control" placeholder="Min" />
-                                    <span class="input-group-text bg-white border-start-0 border-end-0">a</span>
-                                    <input type="@(prop.DataTypeId == 4 ? "date" : "number")" name="@(prop.Name)_To" value="@valTo" class="form-control" placeholder="Max" />
+                                    <input type="hidden" name="@(prop.Name)_operator" value="Equals" />
+                                    <select name="@(prop.Name)_value1" class="form-select">
+                                        <option value="">-- Todos --</option>
+                                        @* Los <option> se cargan dinámicamente o por backend *@
+                                    </select>
                                 </div>
                             }
-                            else // Texto por defecto
+                            else if (prop.DataTypeId == 11) // Booleano / Switch / Bit Activo
                             {
-                                var currentText = Model.CurrentFilters.ContainsKey(prop.Name) ? Model.CurrentFilters[prop.Name] : "";
-                                <input type="text" name="@prop.Name" value="@currentText" class="form-control form-control-sm" placeholder="Buscar..." />
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                <select name="@(prop.Name)_operator" class="form-select form-select-sm">
+                                    <option value="">-- Todos --</option>
+                                    <option value="Active" selected="@(currentOp == "Active")">Sí</option>
+                                    <option value="Inactive" selected="@(currentOp == "Inactive")">NoInactivos / Falsos</option>
+                                </select>
+                            }
+                            else if (prop.DataTypeId == 17) // Listas estáticas por comas
+                            {
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                var currentV1 = GetFilterValue($"{prop.Name}_value1");
+                                var opciones = ParseListValues(prop.SourceDefinition);
+
+                                <div class="input-group input-group-sm">
+                                    <input type="hidden" name="@(prop.Name)_operator" value="Equals" />
+                                    <select name="@(prop.Name)_value1" class="form-select">
+                                        <option value="">-- Todos --</option>
+                                        @foreach (var opt in opciones)
+                                        {
+                                            <option value="@opt.Key" selected="@(currentV1 == opt.Key.ToString())">@opt.Value</option>
+                                        }
+                                    </select>
+                                </div>
+                            }
+                            else if (prop.DataTypeId == 4) // Campos Tipo Fecha / DateTime (Filtros dinámicos de rango y períodos)
+                            {
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                var currentV1 = GetFilterValue($"{prop.Name}_value1");
+                                var currentV2 = GetFilterValue($"{prop.Name}_value2");
+
+                                <div class="d-flex flex-column gap-1">
+                                    <select name="@(prop.Name)_operator" class="form-select form-select-sm date-operator-select" onchange="toggleDateInputs(this)">
+                                        <option value="Equals" selected="@(currentOp == "Equals" || string.IsNullOrEmpty(currentOp))">Es Igual a...</option>
+                                        <option value="Between" selected="@(currentOp == "Between")">Está Entre (Rango)</option>
+                                        <option value="GreaterThanOrEqual" selected="@(currentOp == "GreaterThanOrEqual")">Desde (>=)</option>
+                                        <option value="LessThanOrEqual" selected="@(currentOp == "LessThanOrEqual")">Hasta </option>
+                                        <option value="Today" selected="@(currentOp == "Today")">Hoy</option>
+                                        <option value="Yesterday" selected="@(currentOp == "Yesterday")">Ayer</option>
+                                        <option value="ThisMonth" selected="@(currentOp == "ThisMonth")">Este Mes</option>
+                                    </select>
+
+                                    <div class="input-group input-group-sm date-inputs-container">
+                                        <input type="date" name="@(prop.Name)_value1" value="@currentV1" class="form-control date-v1" placeholder="Fecha" />
+                                        <span class="input-group-text bg-white border-start-0 border-end-0 date-range-sep d-none">a</span>
+                                        <input type="date" name="@(prop.Name)_value2" value="@currentV2" class="form-control date-v2 d-none" placeholder="Hasta" />
+                                    </div>
+                                </div>
+                            }
+                            else if (prop.DataTypeId == 1 || prop.DataTypeId == 2) // Numéricos (Enteros, Decimales, Monedas)
+                            {
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                var currentV1 = GetFilterValue($"{prop.Name}_value1");
+                                var currentV2 = GetFilterValue($"{prop.Name}_value2");
+
+                                <div class="d-flex flex-column gap-1">
+                                    <select name="@(prop.Name)_operator" class="form-select form-select-sm numeric-operator-select" onchange="toggleNumericInputs(this)">
+                                        <option value="Equals" selected="@(currentOp == "Equals" || string.IsNullOrEmpty(currentOp))">Igual (=)</option>
+                                        <option value="Between" selected="@(currentOp == "Between")">Entre (Rango)</option>
+                                        <option value="GreaterThan" selected="@(currentOp == "GreaterThan")">Mayor que (>)</option>
+                                        <option value="LessThan" selected="@(currentOp == "LessThan")">Menor que </option>
+                                        <option value="GreaterThanOrEqual" selected="@(currentOp == "GreaterThanOrEqual")">Mayor o Igual (>=)</option>
+                                        <option value="LessThanOrEqual" selected="@(currentOp == "LessThanOrEqual")">Menor o Igual </option>
+                                    </select>
+
+                                    <div class="input-group input-group-sm numeric-inputs-container">
+                                        <input type="number" step="any" name="@(prop.Name)_value1" value="@currentV1" class="form-control numeric-v1" placeholder="Valor" />
+                                        <span class="input-group-text bg-white border-start-0 border-end-0 numeric-range-sep d-none">a</span>
+                                        <input type="number" step="any" name="@(prop.Name)_value2" value="@currentV2" class="form-control numeric-v2 d-none" placeholder="Máx" />
+                                    </div>
+                                </div>
+                            }
+                            else // Strings / Alfanuméricos por defecto
+                            {
+                                var currentOp = GetFilterValue($"{prop.Name}_operator");
+                                var currentV1 = GetFilterValue($"{prop.Name}_value1");
+
+                                <div class="d-flex flex-column gap-1">
+                                    <select name="@(prop.Name)_operator" class="form-select form-select-sm">
+                                        <option value="Contains" selected="@(currentOp == "Contains" || string.IsNullOrEmpty(currentOp))">Contiene</option>
+                                        <option value="StartsWith" selected="@(currentOp == "StartsWith")">Empieza con</option>
+                                        <option value="EndsWith" selected="@(currentOp == "EndsWith")">Termina con</option>
+                                        <option value="Equals" selected="@(currentOp == "Equals")">Es Exactamente Igual A</option>
+                                        <option value="NotContains" selected="@(currentOp == "NotContains")">No Contiene</option>
+                                    </select>
+                                    <input type="text" name="@(prop.Name)_value1" value="@currentV1" class="form-control form-control-sm" placeholder="Texto a buscar..." />
+                                </div>
                             }
                         </div>
                     }
                 }
             </div>
             <div class="d-flex justify-content-end mt-3 gap-2">
-                <a href="/Data/@entityName" class="btn btn-sm btn-light border">Limpiar</a>
+                <a href="/Data/@entityName" class="btn btn-sm btn-light border">Limpiar Filtros</a>
                 <button type="submit" class="btn btn-sm btn-primary">Aplicar Filtros</button>
             </div>
         </form>
@@ -159,59 +239,115 @@
                             {
                                 <tr>
                                     <td class="ps-4">
-                                        @* Regla Nro 3: Blindaje contra nulos y ausencias estructurales *@
                                         @{ var folioVal = row.ContainsKey("Folio") ? row["Folio"]?.ToString() : "-"; }
-                                        
-                                        @* Control seguro para IsDeleted (si el CTE o ListQuery expone el flag físico) *@
                                         @{ bool deletedRow = row.ContainsKey("IsDeleted") && Convert.ToBoolean(row["IsDeleted"]); }
 
-                                        <span class="badge @( deletedRow ? "bg-secondary text-light": "bg-light text-primary")  border fw-bold">@folioVal</span>
+                                        <span class="badge @( deletedRow ? "bg-secondary text-light": "bg-light text-primary") border fw-bold">@folioVal</span>
                                     </td>
                                     
                                     @foreach (EntityProperty prop in Model.EntityMetadata.Properties)
                                     {
                                         if (prop.OnList == true)
                                         {
-                                            <td>
+                                            
                                                 @if (row.ContainsKey(prop.Name) && row[prop.Name] != null && row[prop.Name] != DBNull.Value)
                                                 {
                                                     var rawVal = row[prop.Name];
 
-                                                    if (prop.DataTypeId == 2 || prop.DataTypeId == 3 || rawVal is bool) // Tipo Booleano / Switch o Bits
+                                                    if (prop.DataTypeId == 11 || rawVal is bool)
                                                     {
                                                         var isChecked = rawVal.ToString() == "1" || rawVal.ToString().ToLower() == "true";
-                                                        <i class="bi @(isChecked ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
+                                                        <td align="center">
+                                                            <i class="bi @(isChecked ? "bi-check-circle-fill text-success" : "bi-x-circle text-muted")"></i>
+                                                        </td>
                                                     }
-                                                    else if (prop.DataTypeId == 4) // Tipo Fecha / DateTime
+                                                    else if (prop.DataTypeId == 3 || prop.DataTypeId == 103)
                                                     {
-                                                        @Convert.ToDateTime(rawVal).ToString("dd/MM/yyyy HH:mm")
+                                                        <td>
+                                                            @Convert.ToDateTime(rawVal).ToString("dd/MM/yyyy HH:mm")
+                                                        </td>
                                                     }
-                                                    else if (prop.DataTypeId == 17) // Listas Estáticas de Definición por comas
+                                                    else if (prop.DataTypeId == 2 )
+                                                    {
+                                                        <td align="right">
+                                                            @Convert.ToDecimal(rawVal).ToString("N2")
+                                                        </td>
+                                                    }                                                    
+                                                    else if (prop.DataTypeId == 17)
                                                     {
                                                         var opciones = ParseListValues(prop.SourceDefinition);
                                                         if (int.TryParse(rawVal?.ToString(), out int intKey) && opciones.ContainsKey(intKey))
                                                         {
-                                                            <span class="badge bg-light text-dark border">@opciones[intKey]</span>
+                                                            <td>
+                                                                <span class="badge bg-light text-dark border">@opciones[intKey]</span>
+                                                            </td>
                                                         }
                                                         else
                                                         {
-                                                            <span class="text-muted">-</span>
+                                                            <td>
+                                                                <span class="text-muted">-</span>
+                                                            </td>
                                                         }
                                                     } 
+                                                    else if (prop.DataTypeId == 18) // Tipo de Dato Image (18)
+                                                    {
+                                                        var imgVal = rawVal?.ToString();
+                                                        if (!string.IsNullOrEmpty(imgVal))
+                                                        {
+                                                            string imgSrc = imgVal.StartsWith("data:image") ? imgVal : $"/uploads/{imgVal}";
+                                                            <td>
+                                                                <a href="@imgSrc" target="_blank" title="Ver imagen en tamaño completo">
+                                                                    <img src="@imgSrc" alt="@prop.Label" class="img-thumbnail shadow-sm" style="max-height: 40px; max-width: 60px; object-fit: cover; border-radius: 4px;" />
+                                                                </a>
+                                                            </td>
+                                                        }
+                                                        else
+                                                        {
+                                                            <td>
+                                                                <span class="text-muted small"><i class="bi bi-image text-black-50 me-1"></i>Sin imagen</span>
+                                                            </td>
+                                                        }
+                                                    }
+                                                    else if (prop.DataTypeId == 19) // Tipo de Dato Url (19)
+                                                    {
+                                                        var urlVal = rawVal?.ToString();
+                                                        if (!string.IsNullOrEmpty(urlVal))
+                                                        {
+                                                            var formattedUrl = urlVal.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || urlVal.StartsWith("https://", StringComparison.OrdinalIgnoreCase) 
+                                                                ? urlVal 
+                                                                : $"https://{urlVal}";
+
+                                                            <td>
+                                                                <a href="@formattedUrl" target="_blank" rel="noopener noreferrer" class="btn btn-xs btn-link text-decoration-none px-0 fw-semibold">
+                                                                    <i class="bi bi-box-arrow-up-right me-1"></i> Abrir Enlace
+                                                                </a>
+                                                            </td>
+
+                                                        }
+                                                        else
+                                                        {
+                                                            <td>
+                                                                <span class="text-muted small">-</span>
+                                                            </td>
+                                                        }
+                                                    }
+
+
+
                                                     else
                                                     {
-                                                        @* 🚀 INTEGRACIÓN CENTRAL: 
-                                                           Si DataTypeId == 10 (Relacional), el nuevo ListQuery ejecutó un LEFT JOIN con COALESCE 
-                                                           y sobreescribió la columna 'prop.Name' con el texto descriptivo legible en lugar del GUID. 
-                                                           Se renderiza directo y a máxima velocidad. *@
-                                                        @rawVal.ToString()
+                                                        <td>
+                                                            @rawVal.ToString()
+                                                        </td>
                                                     }
                                                 }
                                                 else
                                                 {
-                                                    <span class="text-muted small">-</span>
+                                                    <td>
+                                                        <span class="text-muted small">-</span>
+                                                    </td>
                                                 }
-                                            </td>
+                                            
                                         }
                                     }
 
@@ -221,14 +357,12 @@
                                             var rowFolio = row.ContainsKey("Folio") ? row["Folio"]?.ToString() : "";
                                         }
                                         <div class="btn-group shadow-sm">
-
                                             @if (!deletedRow && access.CanUpdate)
                                             {
                                                 <a class="btn btn-primary" href="/Data/@entityName/Edit/@rowId">
                                                     <i class="bi bi-pencil"></i>
                                                 </a>
                                             }
-
                                             @if (!deletedRow && access.CanDelete)
                                             {
                                                 <button class="btn btn-danger" onclick="confirmDelete('@entityName', '@rowId', '@rowFolio')">
@@ -244,9 +378,7 @@
                 </table>
             </div>
 
-
             <div class="card-footer bg-white d-flex justify-content-between align-items-center border-top">
-                
                 @if (Model.EntityMetadata.PageSize > 0)
                 {
                     <div class="text-muted small">
@@ -281,7 +413,6 @@
                 }
             </div>
 
-            @* Helper Razor en línea para reconstruir la URL manteniendo los filtros avanzados activos *@
             @functions {
                 string BuildPageUrl(int targetPage)
                 {
@@ -303,7 +434,6 @@
 
 @section Scripts {
     <script>
-        // La sección de Scripts mantiene su comportamiento pero garantizamos que reciba strings limpios
         function confirmDelete(entity, id, folio) {
             Swal.fire({
                 title: '¿Eliminar registro?',
@@ -319,6 +449,58 @@
                 }
             });
         }
+
+        // Control dinámico de Inputs para Fechas basándose en el Operador Seleccionado
+        function toggleDateInputs(selectElement) {
+            const container = selectElement.closest('.d-flex');
+            const v1 = container.querySelector('.date-v1');
+            const v2 = container.querySelector('.date-v2');
+            const sep = container.querySelector('.date-range-sep');
+            const val = selectElement.value;
+
+            if (val === 'Between') {
+                v1.classList.remove('d-none');
+                v2.classList.remove('d-none');
+                sep.classList.remove('d-none');
+            } else if (val === 'Today' || val === 'Yesterday' || val === 'ThisMonth') {
+                v1.classList.add('d-none');
+                v2.classList.add('d-none');
+                sep.classList.add('d-none');
+                v1.value = '';
+                v2.value = '';
+            } else {
+                v1.classList.remove('d-none');
+                v2.classList.add('d-none');
+                sep.classList.add('d-none');
+                v2.value = '';
+            }
+        }
+
+        // Control dinámico de Inputs para Números basándose en el Operador Seleccionado
+        function toggleNumericInputs(selectElement) {
+            const container = selectElement.closest('.d-flex');
+            const v1 = container.querySelector('.numeric-v1');
+            const v2 = container.querySelector('.numeric-v2');
+            const sep = container.querySelector('.numeric-range-sep');
+            const val = selectElement.value;
+
+            if (val === 'Between') {
+                v1.classList.remove('d-none');
+                v2.classList.remove('d-none');
+                sep.classList.remove('d-none');
+            } else {
+                v1.classList.remove('d-none');
+                v2.classList.add('d-none');
+                sep.classList.add('d-none');
+                v2.value = '';
+            }
+        }
+
+        // Ejecutar al cargar la página para mantener consistencia visual si hay filtros aplicados previos
+        document.addEventListener("DOMContentLoaded", function() {
+            document.querySelectorAll('.date-operator-select').forEach(el => toggleDateInputs(el));
+            document.querySelectorAll('.numeric-operator-select').forEach(el => toggleNumericInputs(el));
+        });
     </script>
 }
 
@@ -326,4 +508,5 @@
     .btn-white { background-color: #fff; }
     .btn-white:hover { background-color: #f8f9fa; }
     #dynamicTable th { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+    .filter-group-box { background-color: #fcfcfc; border: 1px solid #f1f1f1; padding: 10px; border-radius: 6px; }
 </style>

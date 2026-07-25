@@ -57,6 +57,7 @@ CREATE TABLE Entity (
     UseNameField BIT NOT NULL DEFAULT 1,
     NameLabel NVARCHAR(120) NOT NULL DEFAULT 'Name',
     NameHelpText NVARCHAR(480) NOT NULL DEFAULT 'Standard identifier for the record',
+    PageSize INT NOT NULL DEFAULT 20, -- Nacen protegidas contra sobrecargas
     
     -- System Flags
     IsSystem BIT NOT NULL DEFAULT 0,
@@ -86,6 +87,7 @@ CREATE TABLE Entity (
     OnAfterDelete NVARCHAR(MAX) NULL,
 
     -- Audit & State
+    UpdatedById UNIQUEIDENTIFIER,
     IsAvailable BIT NOT NULL DEFAULT 1,
     CreatedAt DATETIME NOT NULL DEFAULT GETDATE(),
     UpdatedAt DATETIME NOT NULL DEFAULT GETDATE(),
@@ -106,16 +108,23 @@ CREATE TABLE EntityProperty (
     IsUnique BIT NOT NULL DEFAULT 0,
     IsIndexed BIT NOT NULL DEFAULT 0,
     AllowCascadeDelete BIT NOT NULL DEFAULT 0,
+
+
+    IsVisible BIT NOT NULL DEFAULT 1,
+    IsEditable BIT NOT NULL DEFAULT 1,
+
     -- Layout
     GridRow INT NOT NULL DEFAULT 0,
     GridColumn INT NOT NULL DEFAULT 0,
     OnList BIT NOT NULL DEFAULT 0,
+    IsFilter BIT NOT NULL DEFAULT 0,
     Sequence INT NOT NULL DEFAULT 0,
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedById UNIQUEIDENTIFIER NOT NULL,
+    UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+    UpdatedById UNIQUEIDENTIFIER,
     UNIQUE(EntityId, Name)
 );
-
 
 
 
@@ -131,6 +140,8 @@ CREATE TABLE DynamicView (
     NextExecutionDateTime DATETIME2,
     AccessLevel INT NOT NULL DEFAULT 0,
     IsActive BIT NOT NULL DEFAULT 1,
+    IsPublic BIT NOT NULL DEFAULT 0,
+
     UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedById UNIQUEIDENTIFIER NOT NULL
@@ -146,6 +157,11 @@ CREATE TABLE AccessControl (
     CanRead BIT NOT NULL DEFAULT 1, CanCreate BIT NOT NULL DEFAULT 0,
     CanUpdate BIT NOT NULL DEFAULT 0, CanDelete BIT NOT NULL DEFAULT 0,
     CanExecute BIT NOT NULL DEFAULT 0,
+
+    CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
+    CreatedById UNIQUEIDENTIFIER NOT NULL,
+
+
     CONSTRAINT CHK_AccessTarget CHECK ((ProfileId IS NOT NULL AND UserId IS NULL) OR (ProfileId IS NULL AND UserId IS NOT NULL))
 );
 
@@ -281,7 +297,9 @@ GO
 
 -- 5. SEMILLAS (SEED DATA)
 INSERT INTO DataType (Id, Name, SqlDefinition) VALUES 
-(0, 'String', 'NVARCHAR(120)'), (1, 'Integer', 'INT'), (2, 'Numeric', 'NUMERIC(15,4)'), (3, 'Date', 'DATE'), (103, 'DateTime', 'DATETIME2'), (7, 'LongText', 'NVARCHAR(MAX)'), (11, 'Boolean', 'BIT'), (10, 'RelatedId', 'UNIQUEIDENTIFIER');
+(0, 'String', 'NVARCHAR(120)'), (1, 'Integer', 'INT'), (2, 'Numeric', 'NUMERIC(15,4)'), (3, 'Date', 'DATE'), (103, 'DateTime', 'DATETIME2'), 
+(7, 'LongText', 'NVARCHAR(MAX)'), (11, 'Boolean', 'BIT'), (10, 'RelatedId', 'UNIQUEIDENTIFIER'),
+(18, 'Image', 'NVARCHAR(max)'), (19, 'Url', 'NVARCHAR(512)');
 
 INSERT INTO [User] (Id, Name, Email, Username, Password, IsMaster, IsConfirmed, IsActive, CreatedById)
 VALUES ('00000000-0000-0000-0000-000000000000', 'Super User', 'admin@openpladic.org', 'admin', '0000', 1, 1, 1, '00000000-0000-0000-0000-000000000000');
@@ -364,13 +382,6 @@ BEGIN
 END;
 GO
 
-ALTER TABLE EntityProperty add UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE();
-ALTER TABLE EntityProperty add UpdatedById UNIQUEIDENTIFIER;
-
-ALTER TABLE Entity add UpdatedById UNIQUEIDENTIFIER;
-
-
-GO
 
 
 CREATE OR ALTER PROCEDURE sp_Core_UpdatePropertyMetadata
@@ -419,26 +430,14 @@ GO
 
 
 
-ALTER TABLE AccessControl add CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE();
-ALTER TABLE AccessControl add CreatedById UNIQUEIDENTIFIER NOT NULL;
-
-GO
 
 
 
 
 
-ALTER TABLE DynamicView ADD IsPublic BIT NOT NULL DEFAULT 0;
-GO
 
 
-ALTER TABLE [dbo].[Entity] 
-ADD [PageSize] INT NOT NULL DEFAULT 20; -- Nacen protegidas contra sobrecargas
-GO
 
-ALTER TABLE EntityProperty ADD IsVisible BIT NOT NULL DEFAULT 1;
-ALTER TABLE EntityProperty ADD IsEditable BIT NOT NULL DEFAULT 1;
-GO
 
 CREATE TABLE SystemParameter (
     Id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),

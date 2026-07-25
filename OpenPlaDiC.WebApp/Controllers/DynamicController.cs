@@ -7,6 +7,7 @@ using OpenPlaDiC.WebApp.Models;
 using OpenPlaDiC.DAL;
 using OpenPlaDiC.Framework;
 using OpenPlaDiC.Core.Models.DynamicQuery;
+using FilterCriterion = OpenPlaDiC.BIZ.FilterCriterion;
 
 
 namespace OpenPlaDiC.WebApp.Controllers
@@ -41,8 +42,7 @@ namespace OpenPlaDiC.WebApp.Controllers
         [HttpGet]
         public async Task<IActionResult> Index(
             string entityName, 
-            [FromQuery] Dictionary<string, string> search,
-            [FromQuery] int page = 1) // ASP.NET Core bindea esto automáticamente de la URL
+            [FromQuery] int page = 1) // Removimos el Dictionary plano de los parámetros de firma
         {
             if (page < 1) page = 1;
 
@@ -56,46 +56,56 @@ namespace OpenPlaDiC.WebApp.Controllers
             var access = await _accessService.GetEntityAccessAsync(userId, entityMetadata.Id);
             if (!access.CanRead) return Forbid();
 
-            var criteria = new HashSet<FilterCriterion>();
+            // 🚀 NUEVA ESTRUCTURA: Lista de GlobalItem para transportar los operadores avanzados
+            var advancedFilters = new List<GlobalItem>();
 
-            // Interceptamos la Query String basándonos en la metadata de la entidad
-            foreach (EntityProperty prop in entityMetadata.Properties)
+            // Leemos la Query String de la petición actual
+            var queryDict = HttpContext.Request.Query;
+
+            // Procesamos cada propiedad que tenga permitido filtrar (IsFilterfdz == true)
+            foreach (EntityProperty prop in entityMetadata.Properties.Where(p => p.IsFilter))
             {
-                // Ejemplo para texto: search[Field_Text]=Juan
-                if (search.TryGetValue(prop.Name, out string? value) && !string.IsNullOrWhiteSpace(value))
+                // Esperamos en la URL estructuras como: ?prop_Op=Contains&prop_Val=Juan
+                string opKey = $"{prop.Name}_Op";
+                string valKey = $"{prop.Name}_Val";
+                string textKey = $"{prop.Name}_Text"; // Para el segundo valor de rangos (Between)
+
+                if (queryDict.TryGetValue(opKey, out var opValue) && !string.IsNullOrWhiteSpace(opValue))
                 {
-                    if (prop.DataTypeId == 10) // RelatedEntity
+                    queryDict.TryGetValue(valKey, out var val1);
+                    queryDict.TryGetValue(textKey, out var val2);
+
+                    // Solo agregamos el filtro si el operador es especial (ej: "Hoy", "Ayer") o si tiene un valor capturado
+                    if (!string.IsNullOrWhiteSpace(val1) || opValue == "Today" || opValue == "Yesterday" || opValue == "ThisMonth")
                     {
-                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Equals, value));
-                    }
-                    else if (prop.DataTypeId == 0)
-                    {
-                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Contains, value));
-                    }
-                }
-                // Rangos para fechas/números: search[Field_Date_From] y search[Field_Date_To]
-                else if (search.TryGetValue($"{prop.Name}_From", out var fromVal) && 
-                        search.TryGetValue($"{prop.Name}_To", out var toVal))
-                {
-                    if (!string.IsNullOrWhiteSpace(fromVal) && !string.IsNullOrWhiteSpace(toVal))
-                    {
-                        criteria.Add(new FilterCriterion(prop.Name, FilterOperator.Between, fromVal, toVal));
+                        advancedFilters.Add(new GlobalItem
+                        {
+                            Name = prop.Name,          // Campo de la Base de Datos
+                            Opt = opValue.ToString(), // Operador (e.g., "StartsWith", "GreaterThan", "Between")
+                            Value = val1.ToString(),   // Valor principal o Fecha Inicial
+                            Text = val2.ToString()     // Valor secundario o Fecha Final (si aplica)
+                        });
                     }
                 }
             }
 
-            // Consumimos el servicio de negocio pasándole los criterios reconstruidos
-            var dataGrid = await _dynamicDataService.GetPagedDataAsync(entityName, criteria,page, isMaster);
+
+            // Mapeo dinámico avanzado de las estructuras HTTP a los criterios del Kernel
+            HashSet<FilterCriterion> filterCriteria = MapGlobalItemsToCriteria(advancedFilters);
+
+            var records = await _dynamicDataService.GetPagedDataAsync(entityName, filterCriteria, page, isMaster);
+
+            // Mantenemos el diccionario en el ViewModel solo para repoblar los inputs de la UI en la Vista
+            var currentFiltersPlain = queryDict.ToDictionary(k => k.Key, v => v.Value.ToString());
 
             var viewModel = new DynamicIndexViewModel {
                 EntityMetadata = entityMetadata,
-                Data = dataGrid,
-                CurrentFilters = search,
-                CurrentPage = page // Añade esta propiedad a tu ViewModel para controlar los botones Sig/Ant
+                Data = records,
+                CurrentFilters = currentFiltersPlain, 
+                CurrentPage = page 
             };
 
             ViewBag.Access = access;
-
 
             return View("DynamicIndex", viewModel);
         }
@@ -267,7 +277,39 @@ namespace OpenPlaDiC.WebApp.Controllers
         }
 
 
+        private HashSet<FilterCriterion> MapGlobalItemsToCriteria(List<GlobalItem> advancedFilters)
+        {
+            var criteriaSet = new HashSet<FilterCriterion>();
+            if (advancedFilters == null || !advancedFilters.Any()) return criteriaSet;
 
+            // Agrupamos por el nombre del campo real (asumiendo formato "Campo_Propiedad")
+            // O si mandas objetos serializados, adaptas este agrupador.
+            var groupedByField = advancedFilters
+                .Where(x => x.Name.Contains("_"))
+                .GroupBy(x => x.Name.Split('_')[0]);
+
+            foreach (var group in groupedByField)
+            {
+                string fieldName = group.Key;
+                
+                string opStr = group.FirstOrDefault(x => x.Name.EndsWith("_operator"))?.Value?.ToString();
+                var val1 = group.FirstOrDefault(x => x.Name.EndsWith("_value1"))?.Value;
+                var val2 = group.FirstOrDefault(x => x.Name.EndsWith("_value2"))?.Value;
+
+                // Intentar parsear el operador string al Enum correspondiente
+                if (Enum.TryParse<BIZ.FilterOperator>(opStr, true, out var parsedOperator))
+                {
+                    criteriaSet.Add(new FilterCriterion(fieldName, parsedOperator, val1, val2));
+                }
+                else
+                {
+                    // Fallback por defecto si no se reconoce el operador
+                    criteriaSet.Add(new FilterCriterion(fieldName, BIZ.FilterOperator.Contains, val1));
+                }
+            }
+
+            return criteriaSet;
+        }
 
 
     }

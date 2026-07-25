@@ -14,5 +14,7 @@ public enum PropertyDataType
         Boolean = 11,
         Password = 12,
         Currency = 16,
-        ListValue = 17
+        ListValue = 17,
+        Image = 18,
+        Url = 19
     }

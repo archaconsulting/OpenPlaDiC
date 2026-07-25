@@ -10,7 +10,7 @@ public interface IMetadataService
     Task<Entity> GetEntityByNameAsync(string entityName);
     Task<Entity> GetEntityWithPropertiesAsync(string entityName);
     Task<IEnumerable<Entity>> GetAllEntitiesAsync(bool includeAll = false);
-    Task<dynamic?> GetEntityMetadataAsync(string entityName);
+    Task<Entity?> GetEntityMetadataAsync(string entityName);
     Task RefreshEntityListQueryAsync(string entityName, AppDbContext context);
     string BuildDynamicListQuery(Entity entity);
 }
@@ -59,7 +59,7 @@ public class MetadataService : IMetadataService
             
         }
 
-        public async Task<dynamic?> GetEntityMetadataAsync(string entityName)
+        public async Task<Entity?> GetEntityMetadataAsync(string entityName)
         {
             // Aquí va tu lógica actual para recuperar la definición de la entidad desde SQL Server.
             // Un ejemplo rápido usando EF Core sobre las tablas del Kernel:

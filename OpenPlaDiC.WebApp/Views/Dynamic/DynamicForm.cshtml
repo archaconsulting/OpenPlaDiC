@@ -81,7 +81,7 @@
 
 
 
-            <form action="/Data/@Model.EntityMetadata.Name/Save/@recordId" method="post" id="dynamicForm">
+            <form action="/Data/@Model.EntityMetadata.Name/Save/@recordId" method="post" id="dynamicForm" enctype="multipart/form-data">
                 @Html.AntiForgeryToken() @* Generamos el token de seguridad manualmente *@
 
 
@@ -194,6 +194,63 @@
                                                     @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
                                                 break;
 
+                                            case PropertyDataType.Date:
+                                                <input type="date" name="@prop.Name" class="form-control"
+                                                    value="@(Convert.ToDateTime(Model.RecordData[prop.Name]).ToString("yyyy-MM-dd"))"
+                                                    @(Model.AccessLevel < 2 || !prop.IsEditable ? "readonly" : "") />
+                                                break;
+
+
+                                            case PropertyDataType.Image:
+                                                var currentImg = Model.RecordData.ContainsKey(prop.Name) ? Model.RecordData[prop.Name]?.ToString() : "";
+                                                bool hasImage = !string.IsNullOrEmpty(currentImg);
+                                                string imgSrc = hasImage ? (currentImg.StartsWith("data:image") ? currentImg : $"/uploads/{currentImg}") : "";
+
+
+                                                <input type="hidden" name="@(prop.Name)_Existing" value="@currentImg" />
+                                                <input type="hidden" name="@(prop.Name)_KeepCurrent" id="@(prop.Name)_KeepCurrent" value="true" />
+
+                                                <div class="card p-2 border-dashed bg-light mb-2">
+                                                    <div class="d-flex align-items-center gap-3">
+                                                        <div id="preview_container_@prop.Name" class="@(hasImage ? "" : "d-none")">
+                                                            <img id="preview_@prop.Name" src="@imgSrc" class="img-thumbnail shadow-sm" style="max-height: 120px; max-width: 180px; object-fit: contain;" />
+                                                        </div>
+                                                        <div class="flex-grow-1">
+                                                            <input type="file" 
+                                                                    name="@prop.Name" 
+                                                                    id="file_@prop.Name" 
+                                                                    class="form-control form-control-sm" 
+                                                                    accept="image/*" 
+                                                                    onchange="previewImage(this, '@prop.Name')" />
+                                                            <small class="form-text text-muted d-block mt-1">Seleccione una imagen (PNG, JPG, WEBP, GIF).</small>
+                                                        </div>
+                                                        @if (hasImage)
+                                                        {
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="clearImage('@prop.Name')">
+                                                                <i class="bi bi-trash"></i> Quitar
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                </div>
+
+
+                                                break;
+
+
+                                            case PropertyDataType.Url:
+                                                var currentUrl = Model.RecordData.ContainsKey(prop.Name) ? Model.RecordData[prop.Name]?.ToString() : "";
+                                                <div class="input-group">
+                                                    <span class="input-group-text"><i class="bi bi-link-45deg"></i></span>
+                                                    <input type="url" 
+                                                        name="@prop.Name" 
+                                                        value="@currentUrl" 
+                                                        class="form-control" 
+                                                        placeholder="https://ejemplo.com" 
+                                                        maxlength="512" />
+                                                </div>
+                                                break;
+
+
                                             case PropertyDataType.RelatedEntity:
 
 
@@ -291,6 +348,37 @@
 
 
 <script>
+
+
+
+    function previewImage(input, propName) {
+        const previewContainer = document.getElementById(`preview_container_${propName}`);
+        const previewImg = document.getElementById(`preview_${propName}`);
+        const keepCurrentInput = document.getElementById(`${propName}_KeepCurrent`);
+
+        if (input.files && input.files[0]) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                previewImg.src = e.target.result;
+                previewContainer.classList.remove('d-none');
+            };
+            reader.readAsDataURL(input.files[0]);
+            if (keepCurrentInput) keepCurrentInput.value = "false";
+        }
+    }
+
+    function clearImage(propName) {
+        const previewContainer = document.getElementById(`preview_container_${propName}`);
+        const previewImg = document.getElementById(`preview_${propName}`);
+        const fileInput = document.getElementById(`file_${propName}`);
+        const keepCurrentInput = document.getElementById(`${propName}_KeepCurrent`);
+
+        if (fileInput) fileInput.value = "";
+        if (previewImg) previewImg.src = "";
+        if (previewContainer) previewContainer.classList.add('d-none');
+        if (keepCurrentInput) keepCurrentInput.value = "false";
+    }
+
 
     function loadAuditTrail(entity, id) {
         // Ajustamos la URL eliminando la repetición del nombre de la entidad

@@ -20,6 +20,7 @@ public class EntityProperty
         // --- ESTAS SON LAS QUE DEBEN ESTAR ---
         public bool IsVisible { get; set; } 
         public bool IsEditable { get; set; }         
+        public bool IsFilter { get; set; }         
         
         // Layout para Renderizado Dinámico
         public int GridRow { get; set; }
