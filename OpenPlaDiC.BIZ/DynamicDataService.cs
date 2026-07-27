@@ -675,6 +675,9 @@ public class DynamicDataService : IDynamicDataService
             {
                 dict[prop.Name] = null;
                 if (prop.DataTypeId == 10) dict[prop.Name + "_Text"] = string.Empty;
+
+                if(prop.DataTypeId == 3) dict[prop.Name] = DateTime.Now.ToString("yyyy-MM-dd");
+
             }
 
             foreach (var param in query)

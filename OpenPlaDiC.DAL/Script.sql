@@ -24,23 +24,36 @@ CREATE TABLE [User] (
     IsConfirmed BIT NOT NULL DEFAULT 0,
     IsActive BIT NOT NULL DEFAULT 1,
     PasswordSalt NVARCHAR(MAX) NULL,
+    HomePageView NVARCHAR(320),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     UpdatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedById UNIQUEIDENTIFIER NULL
 );
 
+
 CREATE TABLE Profile (
     Id UNIQUEIDENTIFIER NOT NULL PRIMARY KEY DEFAULT NEWID(),
     Name NVARCHAR(120) NOT NULL UNIQUE,
+    Number INT IDENTITY(1,1) NOT NULL,
+    Folio AS 'PFL-' + RIGHT('0000000000' + CONVERT(NVARCHAR(10), Number), 10) PERSISTED,
+    HomePageView NVARCHAR(320),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE(),
     CreatedById UNIQUEIDENTIFIER NOT NULL
 );
 
+
+
+
 CREATE TABLE UserProfile (
     UserId UNIQUEIDENTIFIER NOT NULL REFERENCES [User](Id),
     ProfileId UNIQUEIDENTIFIER NOT NULL REFERENCES Profile(Id),
+    IsPrimary BIT NOT NULL default 1,
     PRIMARY KEY (UserId, ProfileId)
 );
+
+
+
+
 
 -- 2. MOTOR DE METADATOS (ENTIDADES Y PROPIEDADES)
 
@@ -453,6 +466,8 @@ CREATE TABLE SystemParameter (
 -- Semillas para la configuración de correo
 INSERT INTO SystemParameter ([Key], [Value], Description, Category, IsSystem)
 VALUES 
+('DEFAULT_HOME_LOGGED_IN', '', 'Vista inicial para usuarios registrados', 'GENERAL', 1),
+('DEFAULT_HOME_ANONYMOUS', '', 'Vista inicial para usuarios anónimos', 'GENERAL', 1),
 ('SMTP_HOST', '://example.com', 'Servidor de salida SMTP', 'EMAIL', 1),
 ('SMTP_PORT', '587', 'Puerto del servidor SMTP', 'EMAIL', 1),
 ('SMTP_USER', 'notificaciones@openpladic.org', 'Usuario de correo', 'EMAIL', 1),

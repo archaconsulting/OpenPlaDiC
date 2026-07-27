@@ -1,0 +1,156 @@
+<div class="container my-5">
+    @Html.AntiForgeryToken()
+
+    <!-- Botón de retorno -->
+    <div class="row mb-3">
+        <div class="col-12">
+            <a href="/Custom/principal" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Volver al inicio
+            </a>
+        </div>
+    </div>
+
+    <!-- Contenedor general de la publicación -->
+    <div id="publicacion-container">
+        <!-- Spinner de carga inicial -->
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando publicación...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // 1. Extraer el parámetro 'Id' de la URL actual
+        const urlParams = new URLSearchParams(window.location.search);
+        const publicacionId = urlParams.get('Id');
+
+        if (!publicacionId) {
+            $('#publicacion-container').html(`
+                <div class="alert alert-warning text-center" role="alert">
+                    No se ha especificado una publicación válida.
+                </div>
+            `);
+            return;
+        }
+
+        const token = $('input[name="__RequestVerificationToken"]').val() || window.AppUser?.token;
+
+        // ⚡ CORRECCIÓN DE TIPADO: Estructura GlobalItem compatible con el modelo del backend de Open PlaDiC
+        // Aseguramos que el valor se mande como string plano para que el proveedor lo interprete o haga el casting interno en el SP.
+        const parametrosSP = [
+            { Name: "Id", Value: String(publicacionId) }
+        ];
+
+        // 2. Primer SP: Encabezado de la publicación
+        getProcData(
+            "sp_ObtenerNotificacionPorId", // <--- Ajusta al nombre real de tu SP
+            parametrosSP,
+            token,
+            function (responseEncabezado) {
+                let respEnc = typeof responseEncabezado === 'string' ? JSON.parse(responseEncabezado) : responseEncabezado;
+                let dataEnc = respEnc.Data;
+
+                if (!dataEnc || dataEnc.length === 0) {
+                    $('#publicacion-container').html(`
+                        <div class="alert alert-danger text-center" role="alert">
+                            La publicación solicitada no existe o fue eliminada.
+                        </div>
+                    `);
+                    return;
+                }
+
+                let nota = dataEnc[0];
+                let titulo = nota.Titulo || "Sin título";
+                let redactor = nota.Redactor || "Redacción";
+                let fecha = nota.Fechadepublicacion ? new Date(nota.Fechadepublicacion).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }) : "";
+                let imagenPrincipal = nota.Imagenprincipal ? "/uploads/" + nota.Imagenprincipal : "";
+
+                let htmlEncabezado = `
+                    <article class="mx-auto" style="max-width: 800px;">
+                        <div class="mb-4 text-center">
+                            <span class="badge bg-primary mb-2">Noticia Oficial</span>
+                            <h1 class="fw-bold display-5 text-dark mb-3">${titulo}</h1>
+                            <div class="text-muted small">
+                                <span class="me-3"><i class="bi bi-person-fill"></i> Por <strong>${redactor}</strong></span>
+                                <span><i class="bi bi-calendar-event"></i> ${fecha}</span>
+                            </div>
+                        </div>
+
+                        ${imagenPrincipal ? `
+                            <div class="mb-4 text-center">
+                                <img src="${imagenPrincipal}" class="img-fluid rounded shadow-sm w-100" alt="${titulo}" style="max-height: 450px; object-fit: cover;">
+                            </div>
+                        ` : ''}
+
+                        <div id="parrafos-container" class="content-body fs-5 text-secondary">
+                            <div class="text-center py-3">
+                                <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
+                                <span class="text-muted ms-2">Cargando contenido...</span>
+                            </div>
+                        </div>
+                    </article>
+                `;
+
+                $('#publicacion-container').html(htmlEncabezado);
+
+                // 3. Segundo SP: Párrafos de la publicación
+                getProcData(
+                    "sp_ObtenerParrafosPorId", // <--- Ajusta al nombre real de tu SP de párrafos
+                    parametrosSP,
+                    token,
+                    function (responseParrafos) {
+                        let respPar = typeof responseParrafos === 'string' ? JSON.parse(responseParrafos) : responseParrafos;
+                        let parrafosData = respPar.Data;
+
+                        let containerParrafos = $('#parrafos-container');
+                        containerParrafos.empty();
+
+                        if (parrafosData && parrafosData.length > 0) {
+                            let htmlParrafos = '';
+
+                            $.each(parrafosData, function (i, p) {
+                                let subtitulo = p.Subtitulo ? `<h3 class="fw-bold text-dark mt-4 mb-3 h4">${p.Subtitulo}</h3>` : '';
+                                let contenido = p.Contenido ? `<p class="mb-4" style="line-height: 1.8;">${p.Contenido}</p>` : '';
+                                let imagenParrafo = p.Imagen ? p.Imagen : '';
+                                let notaImagen = p.Notadeimagen ? `<figcaption class="figure-caption text-center text-muted mt-1 small">${p.Notadeimagen}</figcaption>` : '';
+
+                                htmlParrafos += `
+                                    <div class="parrafo-block">
+                                        ${subtitulo}
+                                        ${contenido}
+                                        ${imagenParrafo ? `
+                                            <figure class="figure my-3 w-100 text-center">
+                                                <img src="${imagenParrafo.startsWith('http') ? imagenParrafo : '/uploads/' + imagenParrafo}" class="figure-img img-fluid rounded shadow-sm" alt="Imagen de sección">
+                                                ${notaImagen}
+                                            </figure>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            });
+
+                            containerParrafos.html(htmlParrafos);
+                        } else {
+                            containerParrafos.html(`<p class="text-muted italic">Esta publicación no contiene párrafos adicionales registrados.</p>`);
+                        }
+                    },
+                    function (errParrafos) {
+                        $('#parrafos-container').html(`<div class="alert alert-warning">No se pudieron cargar los párrafos de la noticia.</div>`);
+                    },
+                    false
+                );
+
+            },
+            function (errorMessage) {
+                $('#publicacion-container').html(`
+                    <div class="alert alert-danger text-center" role="alert">
+                        <strong>Error:</strong> No se pudo recuperar la información de la publicación. (${errorMessage})
+                    </div>
+                `);
+            },
+            true
+        );
+    });
+</script>

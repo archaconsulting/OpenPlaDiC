@@ -13,6 +13,8 @@ namespace OpenPlaDiC.Core.Models
         public bool IsMaster { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime UpdatedAt { get; set; }
+        // Página de inicio específica para este Usuario (Opcional - Máxima Prioridad)
+        public string? HomePageView { get; set; }
         
         // Relación con perfiles
         public virtual ICollection<UserProfile> UserProfiles { get; set; }
@@ -24,6 +26,8 @@ namespace OpenPlaDiC.Core.Models
         public string Name { get; set; }
         public string Folio { get; set; }
         public virtual ICollection<UserProfile> UserProfiles { get; set; }
+        // Página de inicio específica para este Perfil (Opcional)
+        public string? HomePageView { get; set; }
         public DateTime CreatedAt { get; set; }
         public Guid CreatedById { get; set; }
 
@@ -35,5 +39,8 @@ namespace OpenPlaDiC.Core.Models
         public User User { get; set; }
         public Guid ProfileId { get; set; }
         public Profile Profile { get; set; }
+        // Indica cuál de sus múltiples perfiles es el principal
+        public bool IsPrimary { get; set; } = false;
+
     }
 }

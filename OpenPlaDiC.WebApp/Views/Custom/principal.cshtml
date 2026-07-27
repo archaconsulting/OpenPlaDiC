@@ -1,0 +1,104 @@
+<div class="container my-5">
+
+    @Html.AntiForgeryToken()
+
+    <!-- Encabezado del Diario Digital -->
+    <div class="row mb-4">
+        <div class="col-12 border-bottom pb-2">
+            <p class="text-muted text-center m-0">@DateTime.Now.ToString("dd MMM yyyy") | Última actualización @DateTime.Now.ToString("HH:mm") (GMT-6)</p>
+        </div>
+    </div>
+
+    <!-- Contenedor dinámico donde se inyectarán las noticias -->
+    <div id="noticias-container" class="row g-4">
+        <!-- El contenido se cargará dinámicamente mediante AJAX -->
+        <div class="col-12 text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Cargando noticias...</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        // Obtenemos el token de verificación si está disponible en la vista contenedora
+        const token = $('input[name="__RequestVerificationToken"]').val() || window.AppUser?.token;
+
+        // Llamada al Stored Procedure configurado en el backend mediante sites.js
+        getProcData(
+            "sp_ObtenerNoticiasRecientes", 
+            null, // Parámetros vacíos si el SP trae el TOP 10 por defecto
+            token, 
+            function (response) {
+                // Parseamos la respuesta si viene serializada en JSON por el APIController
+                let respData = typeof response === 'string' ? JSON.parse(response) : response;
+                
+                let data = respData.Data;
+
+                let container = $('#noticias-container');
+                container.empty();
+
+                if (data && data.length > 0) {
+                    let html = '';
+                    
+                    // Iteramos sobre el DataTable recibido
+                    $.each(data, function (index, item) {
+                        // Mapeo de campos del DataTable (incluyendo el Id para la URL)
+                        let idNoticia = item.Id || item.IdPublicacion || "";
+                        let titulo = item.Titulo || "Sin título";
+                        let entrada = item.Entrada || "";
+                        let redactor = item.Redactor || "Redacción";
+                        let fecha = item.Fechadepublicacion ? new Date(item.Fechadepublicacion).toLocaleDateString() : "";
+                        
+                        // Manejo limpio de la ruta de la imagen
+                        let imagen = item.Imagenprincipal ? "/uploads/" + item.Imagenprincipal : "https://via.placeholder.com/600x400?text=La+Prensa+en+L%C3%A5nea";
+
+                        // URL de destino para la publicación completa
+                        let urlDetalle = `/Custom/publicacion?Id=${idNoticia}`;
+
+                        html += `
+                            <div class="col-md-6 col-lg-4">
+                                <div class="card h-100 shadow-sm border-0 transition-card">
+                                    <a href="${urlDetalle}" class="text-decoration-none">
+                                        <img src="${imagen}" class="card-img-top" alt="${titulo}" style="height: 200px; object-fit: cover;">
+                                    </a>
+                                    <div class="card-body d-flex flex-column">
+                                        <h5 class="card-title">
+                                            <a href="${urlDetalle}" class="fw-bold text-primary text-decoration-none stretched-link-custom">
+                                                ${titulo}
+                                            </a>
+                                        </h5>
+                                        <p class="card-text text-secondary flex-grow-1">${entrada}</p>
+                                        <div class="d-flex justify-content-between align-items-center mt-3 pt-3 border-top">
+                                            <small class="text-muted"><i class="bi bi-person-fill"></i> ${redactor}</small>
+                                            <small class="text-muted"><i class="bi bi-calendar-event"></i> ${fecha}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+
+                    container.html(html);
+                } else {
+                    container.html(`
+                        <div class="col-12 text-center py-4">
+                            <p class="text-muted">No hay publicaciones recientes disponibles en este momento.</p>
+                        </div>
+                    `);
+                }
+            },
+            function (errorMessage) {
+                $('#noticias-container').html(`
+                    <div class="col-12">
+                        <div class="alert alert-danger" role="alert">
+                            <strong>Error al cargar las noticias:</strong> ${errorMessage}
+                        </div>
+                    </div>
+                `);
+            },
+            true // Muestra el splash/loader homologado de Open PlaDiC durante la petición
+        );
+    });
+</script>

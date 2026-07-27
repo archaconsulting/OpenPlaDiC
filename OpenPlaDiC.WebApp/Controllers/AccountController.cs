@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using OpenPlaDiC.BIZ;
+using OpenPlaDiC.WebApp.Extensions;
 using OpenPlaDiC.WebApp.Models;
 using System.Security.Claims;
 
@@ -12,14 +13,18 @@ namespace OpenPlaDiC.WebApp.Controllers
         private readonly SignInManager<ApplicationUser> _signInManager;
         private readonly ILogger<AccountController> _logger;
         private readonly IAuthService _authService;
+        private readonly IHomeRedirectService _homeRedirect;
+        
         public AccountController(
             SignInManager<ApplicationUser> signInManager,
             ILogger<AccountController> logger,
-            IAuthService authService)
+            IAuthService authService,
+            IHomeRedirectService homeRedirect)
         {
             _signInManager = signInManager;
             _logger = logger;
             _authService = authService;
+            _homeRedirect = homeRedirect;
         }
 
 
@@ -37,15 +42,11 @@ namespace OpenPlaDiC.WebApp.Controllers
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Login(LoginViewModel model, string? returnUrl = null)
         {
-
             string ip = HttpContext.Connection.RemoteIpAddress?.ToString();
             string ua = Request.Headers["User-Agent"].ToString();
-            
-            returnUrl ??= Url.Content("~/");
 
             if (ModelState.IsValid)
             {
-
                 var user = await _signInManager.UserManager.FindByNameAsync(model.Username);
 
                 if (user == null)
@@ -62,34 +63,40 @@ namespace OpenPlaDiC.WebApp.Controllers
                     return View(model);
                 }
 
-
+                // 1. Agregar NameIdentifier explícitamente para que HomeRedirectService lo pueda leer como GUID
                 var customClaims = new[] {
+                    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()), // 👈 Clave fundamental para el Evaluador
                     new Claim(ClaimTypes.Name, user.UserName),
-
-                    new Claim("FullName", user.FullName),
-                    new Claim("UserId",user.Id),
+                    new Claim("FullName", user.FullName ?? ""),
+                    new Claim("UserId", user.Id.ToString()),
                     new Claim("PhoneNumber", ""),
-                    new Claim("Email",respLogin.Data.Text),
-                    new Claim("IsMaster",user.IsMaster.ToString())
-
+                    new Claim("Email", respLogin.Data.Text ?? ""),
+                    new Claim("IsMaster", user.IsMaster.ToString())
                 };
-                var res = _signInManager.SignInWithClaimsAsync(
-                    user, model.RememberMe,
-                    customClaims);
 
-                if (res.IsCompletedSuccessfully)
+                // 2. Iniciar sesión con claims
+                await _signInManager.SignInWithClaimsAsync(user, model.RememberMe, customClaims);
+
+                // 3. Evaluar la redirección:
+                // Si el usuario venía intentando acceder a una URL específica previa (que no sea la raíz "~/"), respetamos su intención.
+                if (!string.IsNullOrEmpty(returnUrl) && Url.IsLocalUrl(returnUrl) && returnUrl != Url.Content("~/"))
                 {
                     return LocalRedirect(returnUrl);
-
                 }
 
-                ModelState.AddModelError(string.Empty, "Credenciales inválidas en el sistema externo.");
+                // 4. Si venía a la raíz o no tenía returnUrl, construimos el ClaimsPrincipal dinámico para evaluar la Jerarquía
+                var identity = new ClaimsIdentity(customClaims, "Identity.Application");
+                var userPrincipal = new ClaimsPrincipal(identity);
+
+                // 5. Obtenemos la URL calculada por el Kernel (Usuario -> Perfil Principal -> Registrado -> Anónimo -> Home/Index)
+                string redirectUrl = await _homeRedirect.GetRedirectUrlAsync(userPrincipal);
+
+                return LocalRedirect(redirectUrl);
             }
 
-            // Si llegamos aquí, algo falló, volvemos a mostrar el formulario
+            // Si llegamos aquí, algo falló en la validación del modelo
             return View(model);
         }
-
 
 
         public async Task<IActionResult> Logout()

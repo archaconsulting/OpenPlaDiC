@@ -100,3 +100,18 @@ button.accept-policy {
 
 
 
+/* Ajuste de ancho responsivo para el Sidebar */
+#sidebarOffcanvas {
+    width: 280px; /* Ancho estándar del menú */
+}
+
+/* En pantallas medianas y grandes, mantiene el sidebar integrado al layout sin superponerse */
+@media (min-width: 768px) {
+    #sidebarOffcanvas {
+        position: relative !important;
+        transform: none !important;
+        visibility: visible !important;
+        height: 100vh;
+        z-index: 1000;
+    }
+}

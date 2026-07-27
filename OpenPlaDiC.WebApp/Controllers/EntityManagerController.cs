@@ -120,7 +120,7 @@ namespace OpenPlaDiC.WebApp.Controllers
                 new GlobalItem("DataTypeId", prop.DataTypeId.ToString()),
                 new GlobalItem("IsRequired", prop.IsRequired ? "1" : "0"),
                 new GlobalItem("OnList", prop.OnList ? "1" : "0"),
-                new GlobalItem("RelatedEntityName", prop.SourceDefinition),                
+                new GlobalItem("RelatedEntityName", ( prop.DataTypeId.Equals(18) ? "FILE" :  prop.SourceDefinition) ),                
                 new GlobalItem("CreatedById", userId.ToString())
             );
 

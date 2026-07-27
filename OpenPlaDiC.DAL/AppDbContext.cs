@@ -252,7 +252,26 @@ namespace OpenPlaDiC.DAL
                 {
                     // Asegura que el nombre comience con @
                     string paramName = item.Name.StartsWith("@") ? item.Name : "@" + item.Name;
+
+                    //paramName = item.Name;
                     //command.Parameters.AddWithValue(paramName, string.IsNullOrEmpty(item.Value) ? DBNull.Value : item.Value);
+
+
+                    if (item.Value is System.Text.Json.JsonElement jsonElement)
+                    {
+                        item.Value = jsonElement.ValueKind switch
+                        {
+                            System.Text.Json.JsonValueKind.String => jsonElement.GetString(),
+                            System.Text.Json.JsonValueKind.Number => jsonElement.TryGetInt64(out var l) ? l : jsonElement.GetDouble(),
+                            System.Text.Json.JsonValueKind.True => true,
+                            System.Text.Json.JsonValueKind.False => false,
+                            _ => jsonElement.GetRawText()
+                        };
+                    }
+
+
+
+
                     command.Parameters.AddWithValue(paramName, item.Value);
                 }
             }
