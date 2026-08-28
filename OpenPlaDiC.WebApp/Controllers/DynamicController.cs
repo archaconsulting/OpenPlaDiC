@@ -113,7 +113,7 @@ namespace OpenPlaDiC.WebApp.Controllers
 
         // Formulario de Edición / Creación
         [HttpGet("Edit/{id?}")]
-        public async Task<IActionResult> Edit(string entityName, Guid? id)
+        public async Task<IActionResult> Edit(string entityName, Guid? id, string? returnUrl = null)
         {
             var entity = await _metadataService.GetEntityWithPropertiesAsync(entityName);
             if (entity == null) return NotFound();
@@ -158,7 +158,9 @@ namespace OpenPlaDiC.WebApp.Controllers
             {
                 EntityMetadata = entity,
                 RecordData = recordData,
-                AccessLevel = access.AccessLevel
+                AccessLevel = access.AccessLevel,
+                EntityName = entityName,
+                ReturnUrl = returnUrl // Guardar la ruta de retorno
             };
 
             return View("DynamicForm", viewModel);
@@ -172,6 +174,7 @@ namespace OpenPlaDiC.WebApp.Controllers
         public async Task<IActionResult> SaveRecord(string entityName, Guid recordId, [FromForm] IFormCollection form)
         {
             var entity = await _metadataService.GetEntityWithPropertiesAsync(entityName);
+
             if (entity == null) return NotFound();
 
             var userId = GetCurrentUserId();
@@ -191,6 +194,15 @@ namespace OpenPlaDiC.WebApp.Controllers
                 TempData["Message"] = isUpdate 
                     ? "Registro actualizado con éxito." 
                     : "Nuevo registro creado correctamente.";
+
+                
+                string returnUrl = !string.IsNullOrEmpty( form["returnUrl"] ) ? form["returnUrl"] : "";
+
+                if (!string.IsNullOrEmpty(returnUrl))//) && Url.IsLocalUrl(returnUrl))
+                {
+                    // Regresa al Formulario Padre de donde vino
+                    return Redirect(returnUrl);
+                }
 
                 return RedirectToAction(nameof(Index), new { entityName });
             }

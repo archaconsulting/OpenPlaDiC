@@ -4,6 +4,19 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - OpenPlaDiC.WebApp</title>
+
+
+
+
+
+    <meta property="og:title" content="@ViewData["og-title"]">
+    <meta property="og:description" content="@ViewData["og-description"]">
+    <meta property="og:image" content="@ViewData["og-image"]">
+    <meta property="og:url" content="@ViewData["og-url"]">
+    <meta property="og:type" content="@ViewData["og-type"]">
+
+
+
     <script type="importmap"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
@@ -98,9 +111,11 @@
                         </button>
                         <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
                             <ul class="navbar-nav flex-grow-1">
+                                
+@*                                 
                                 <li class="nav-item">
                                     <a class="nav-link text-dark" asp-area="" asp-controller="Home" asp-action="Index">Inicio</a>
-                                </li>
+                                </li> *@
 
                                 @if (User != null && User.Identities != null && User.Identity.IsAuthenticated && Convert.ToBoolean( User.FindFirst("IsMaster")?.Value) )
                                 {
@@ -151,7 +166,7 @@
                                 }
                                 else
                                 {
-                                    <li> <a asp-controller="Account" asp-action="Login">log in</a></li>
+                                    @* <li> <a asp-controller="Account" asp-action="Login">log in</a></li> *@
                                 }
 
 

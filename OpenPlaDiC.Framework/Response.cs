@@ -42,6 +42,22 @@
     {
         public T? Data { get; set; }
 
+        public static Response<T> Exception(Exception ex, string v)
+        {
+
+            return new Response<T>
+            {
+                
+                IsSuccess = false,
+                IsException = true,
+                Message = v,
+                InnerException = ex.Message,
+                Code = 500
+
+            };
+
+        }
+
         public static Response<T> Fail(string v)
         {
             return new Response<T>

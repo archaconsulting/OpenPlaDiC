@@ -67,7 +67,7 @@
                 let redactor = nota.Redactor || "Redacción";
                 let fecha = nota.Fechadepublicacion ? new Date(nota.Fechadepublicacion).toLocaleDateString('es-ES', { year: 'numeric', month: 'long', day: 'numeric' }) : "";
                 let imagenPrincipal = nota.Imagenprincipal ? "/uploads/" + nota.Imagenprincipal : "";
-
+                let entrada = nota.Entrada;
                 let htmlEncabezado = `
                     <article class="mx-auto" style="max-width: 800px;">
                         <div class="mb-4 text-center">
@@ -85,10 +85,16 @@
                             </div>
                         ` : ''}
 
+                        <div id="entrada-container" class="content-body fs-5 text-secondary">
+                            <div class="text-center py-3">
+                                <span class="text-muted ms-2">${entrada}</span>
+                            </div>
+                        </div>
+
                         <div id="parrafos-container" class="content-body fs-5 text-secondary">
                             <div class="text-center py-3">
                                 <div class="spinner-border spinner-border-sm text-secondary" role="status"></div>
-                                <span class="text-muted ms-2">Cargando contenido...</span>
+                                <span class="text-muted ms-2">Cargando información ...</span>
                             </div>
                         </div>
                     </article>

@@ -599,3 +599,14 @@ CREATE TABLE AuditLog (
 );
 
 GO
+
+
+
+
+INSERT INTO SystemParameter (Category, [Key], Value, Description) VALUES
+('WhatsApp', 'TWILIO_ACCOUNT_SID', 'ACXXXXXXXXXXXXXXXXAAAAAAAAAAAAAAAA', 'Account SID de Twilio para WhatsApp'),
+('WhatsApp', 'TWILIO_AUTH_TOKEN_PASS', 'your_auth_token_here', 'Auth Token de Twilio (Cifrado/Oculto)'),
+('WhatsApp', 'TWILIO_PHONE_NUMBER', 'whatsapp:+14155238886', 'Número emisor registrado en Twilio (ej. whatsapp:+14155238886)'),
+('WhatsApp', 'TWILIO_WEBHOOK_SECRET', 'secret_hash_value', 'Clave de verificación para Webhooks entrantes');
+
+
